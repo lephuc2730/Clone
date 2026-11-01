@@ -50,9 +50,12 @@ jobs:
           sleep 4
 
           # Open MotionPlanning -> Joints tab.
+          # The default active tab is Planning. Focus inside that tab, then use Qt's Ctrl+Tab.
           xdotool windowraise "$RVIZ_ID" || true
           xdotool windowactivate --sync "$RVIZ_ID" || true
-          xdotool mousemove 174 367 click 1
+          xdotool mousemove 80 425 click 1 || true
+          sleep 1
+          xdotool key --window "$RVIZ_ID" ctrl+Tab || true
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_joints_tab_open.png
 
