@@ -27,8 +27,8 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
           cd world
-          docker compose pull irs-simulation omron_handsolo
-          docker compose up -d irs-simulation omron_handsolo
+          docker compose pull omron_handsolo
+          docker compose up -d omron_handsolo
           sleep 65
           docker compose ps
 
@@ -42,12 +42,16 @@ jobs:
           fi
           echo "RViz ID: $RVIZ_ID"
 
+          xdotool windowmap "$RVIZ_ID" || true
           xdotool windowsize --sync "$RVIZ_ID" 1500 900 || true
           xdotool windowmove "$RVIZ_ID" 5 5 || true
+          xdotool windowraise "$RVIZ_ID" || true
           xdotool windowactivate --sync "$RVIZ_ID" || true
           sleep 4
 
           # Open MotionPlanning -> Joints tab.
+          xdotool windowraise "$RVIZ_ID" || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
           xdotool mousemove 174 367 click 1
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_joints_tab_open.png
@@ -57,6 +61,8 @@ jobs:
           # Clicking the progress-bar editor sets the value from the joint's min/max bound.
           set_click () {
             local x="$1"; local y="$2"
+            xdotool windowraise "$RVIZ_ID" || true
+            xdotool windowactivate --sync "$RVIZ_ID" || true
             xdotool mousemove "$x" "$y" click 1
             sleep 0.5
           }
