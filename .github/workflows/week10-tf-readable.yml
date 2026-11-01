@@ -1,0 +1,76 @@
+name: Week 10 Readable TF Evidence
+
+on:
+  push:
+    paths:
+      - ".github/workflows/week10-tf-readable.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tf-readable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Clone official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+
+      - name: Start Hand Solo with base and MoveIt
+        working-directory: world
+        run: |
+          sed -i 's/use_base:=false/use_base:=true/' compose.yaml
+          docker compose pull irs-simulation omron-workspace omron_handsolo
+          docker compose up -d irs-simulation omron-workspace omron_handsolo
+          sleep 65
+          docker compose ps
+
+      - name: Launch Nav2 for complete TF chain
+        working-directory: world
+        run: |
+          HS_ID=$(docker compose ps -q omron_handsolo)
+          docker exec -d "$HS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            source /omron_ws/install/setup.bash
+            ros2 launch handsolo_ros handsolo.nav2.launch.py > /tmp/nav2.log 2>&1
+          '
+          sleep 20
+
+      - name: Generate high-resolution TF tree from live TF data
+        working-directory: world
+        run: |
+          mkdir -p ../tf-evidence
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            apt-get update >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ros-jazzy-tf2-tools graphviz poppler-utils >/dev/null
+            source /opt/ros/jazzy/setup.bash
+            mkdir -p /workspace/tf_readable
+            cd /workspace/tf_readable
+            timeout 15s ros2 run tf2_tools view_frames >/workspace/tf_view_frames.log 2>&1 || true
+            ls -lah
+            if [ -f frames.gv ]; then
+              dot -Tpng -Gdpi=220 frames.gv -o frames_readable.png
+              dot -Tsvg frames.gv -o frames_readable.svg
+            fi
+            if [ -f frames.pdf ]; then
+              pdftoppm -png -singlefile -r 220 frames.pdf frames_pdf >/dev/null 2>&1 || true
+            fi
+          '
+          cp workspace/workspace/tf_readable/* ../tf-evidence/ 2>/dev/null || true
+          cp workspace/workspace/tf_view_frames.log ../tf-evidence/ 2>/dev/null || true
+          ls -lah ../tf-evidence/
+
+      - name: Upload readable TF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: week10-readable-tf-evidence
+          path: tf-evidence/
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
