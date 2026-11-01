@@ -142,15 +142,21 @@ jobs:
           if [ -n "$TF_ID" ]; then
             xdotool windowsize --sync "$TF_ID" 1500 900 || true
             xdotool windowmove "$TF_ID" 10 10 || true
+            xdotool windowactivate --sync "$TF_ID" || true
             sleep 3
-            import -display :99 -window "$TF_ID" week10-evidence/week10_full_tf_tree.png || true
+            import -display :99 -window root week10-evidence/week10_full_tf_tree.png || true
+            xdotool windowclose "$TF_ID" || true
+            sleep 2
           fi
 
       - name: Capture MoveIt RViz Pick Carry Place evidence
         continue-on-error: true
         run: |
           mkdir -p week10-evidence
-          RVIZ_ID=$(xdotool search --onlyvisible --name "RViz" | head -1 || true)
+          RVIZ_ID=$(xdotool search --onlyvisible --name "handsolo-moveit.rviz" | head -1 || true)
+          if [ -z "$RVIZ_ID" ]; then
+            RVIZ_ID=$(xdotool search --onlyvisible --name "RViz" | head -1 || true)
+          fi
           echo "RViz ID: $RVIZ_ID" | tee week10-evidence/rviz_window_id.txt
 
           if [ -z "$RVIZ_ID" ]; then
@@ -163,8 +169,9 @@ jobs:
           xdotool windowactivate --sync "$RVIZ_ID" || true
           sleep 5
 
-          # Capture the original window first to prove the live MotionPlanning Joints tab.
-          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_before_pose_edits.png || true
+          # Capture the visible desktop rather than the OpenGL child window directly.
+          # This preserves the real rendered RViz scene in headless X11.
+          import -display :99 -window root week10-evidence/rviz_before_pose_edits.png || true
 
           # Force the Joints tab active.
           xdotool mousemove --window "$RVIZ_ID" 48 484 click 1 || true
@@ -196,15 +203,21 @@ jobs:
           # Values in degrees corresponding to the actual hs_pick_place.py radian goals.
           # Pick waypoint 3 = [0.785, -0.8, 1.4, 0.0, 0.8, 0.0]
           set_pose 45 -46 80 0 46 0
-          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_pick_position.png || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 2
+          import -display :99 -window root week10-evidence/rviz_pick_position.png || true
 
           # Carry waypoint 4 = [0.785, -0.3, 1.2, 0.0, 1.0, 0.0]
           set_pose 45 -17 69 0 57 0
-          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_carry_position.png || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 2
+          import -display :99 -window root week10-evidence/rviz_carry_position.png || true
 
           # Place waypoint 5 = [-0.785, -0.5, 1.2, 0.0, 1.0, 0.0]
           set_pose -45 -29 69 0 57 0
-          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_place_position.png || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 2
+          import -display :99 -window root week10-evidence/rviz_place_position.png || true
 
           import -display :99 -window root week10-evidence/week10_root_after_pose_edits.png || true
 
