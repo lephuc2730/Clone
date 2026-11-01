@@ -22,3 +22,5 @@ jobs:
           cd source.git
           git remote set-url --push origin "https://x-access-token:${GH_TOKEN}@github.com/lephuc2730/Clone.git"
           git push --mirror origin
+
+# trigger mirror
