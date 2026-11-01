@@ -1,0 +1,78 @@
+name: RViz Joints Tab Calibration
+
+on:
+  push:
+    paths:
+      - ".github/workflows/rviz-tab-calibration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Start X11
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 3
+
+      - name: Start MoveIt RViz
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          cd world
+          docker compose pull omron_handsolo
+          docker compose up -d omron_handsolo
+          sleep 65
+
+      - name: Try visible Joints tab coordinates
+        run: |
+          mkdir -p calibration
+          RVIZ_ID=$(xdotool search --onlyvisible --name "handsolo-moveit.rviz" | head -1 || true)
+          xdotool windowmap "$RVIZ_ID" || true
+          xdotool windowsize --sync "$RVIZ_ID" 1500 900 || true
+          xdotool windowmove "$RVIZ_ID" 5 5 || true
+          xdotool windowraise "$RVIZ_ID" || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 3
+          xdotool getwindowgeometry --shell "$RVIZ_ID" > calibration/window_geometry.txt || true
+          import -display :99 -window root calibration/00_before.png
+
+          try_point() {
+            local n="$1"; local x="$2"; local y="$3"
+            xdotool windowraise "$RVIZ_ID" || true
+            xdotool windowactivate --sync "$RVIZ_ID" || true
+            xdotool mousemove "$x" "$y"
+            xdotool mousedown 1
+            sleep 0.2
+            xdotool mouseup 1
+            sleep 2
+            import -display :99 -window root "calibration/${n}_x${x}_y${y}.png"
+          }
+
+          try_point 01 160 365
+          try_point 02 175 365
+          try_point 03 190 365
+          try_point 04 160 372
+          try_point 05 175 372
+          try_point 06 190 372
+          try_point 07 160 380
+          try_point 08 175 380
+          try_point 09 190 380
+
+      - name: Upload calibration
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rviz-joints-tab-calibration
+          path: calibration/
+
+      - name: Stop
+        if: always()
+        run: |
+          cd world
+          docker compose down -v || true
