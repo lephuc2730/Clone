@@ -1,0 +1,229 @@
+name: Week 10 Hand Solo Evidence
+
+on:
+  push:
+    paths:
+      - ".github/workflows/week10-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  week10-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout Clone project
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: student
+
+      - name: Start headless X11
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick x11-utils x11-apps
+          Xvfb :99 -screen 0 1920x1080x24 -ac > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 3
+
+      - name: Clone official unit environment and stage project
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src
+          cp -a student world/workspace/workspace/irs_ws/src/Clone
+
+          # Use the simulated arm + mobile base, MoveIt and RViz.
+          # Nav2 is launched separately below so only the MoveIt RViz window opens.
+          sed -i 's/use_base:=false/use_base:=true/' world/compose.yaml
+          sed -i 's/use_nav2:=false/use_nav2:=false/' world/compose.yaml
+
+      - name: Start official Hand Solo environment
+        working-directory: world
+        run: |
+          docker compose pull irs-simulation omron-workspace omron_handsolo
+          docker compose up -d irs-simulation omron-workspace omron_handsolo
+          sleep 65
+          docker compose ps
+
+      - name: Build student's Week 10 package
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select hand_solo_arm --symlink-install               --event-handlers console_direct+ > /workspace/week10_build.log 2>&1
+            source install/setup.bash
+            ros2 pkg executables hand_solo_arm > /workspace/week10_executables.txt
+          '
+
+      - name: Launch Nav2 alongside MoveIt for full TF evidence
+        working-directory: world
+        continue-on-error: true
+        run: |
+          HS_ID=$(docker compose ps -q omron_handsolo)
+          docker exec -d "$HS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            source /omron_ws/install/setup.bash
+            ros2 launch handsolo_ros handsolo.nav2.launch.py               > /tmp/week10_nav2.log 2>&1
+          '
+          sleep 20
+
+      - name: Collect ROS2 and MoveIt runtime evidence
+        working-directory: world
+        run: |
+          mkdir -p ../week10-evidence
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+
+            ros2 node list | sort > /workspace/week10_nodes.txt
+            ros2 topic list | sort > /workspace/week10_topics.txt
+            ros2 topic list --include-hidden-topics | sort > /workspace/week10_hidden_topics.txt
+            ros2 action list -t > /workspace/week10_actions.txt
+
+            ros2 topic info /joint_states -v > /workspace/week10_joint_states_info.txt
+            timeout 12s ros2 topic echo /joint_states --once > /workspace/week10_joint_states_sample.txt 2>&1 || true
+            timeout 12s ros2 topic hz /joint_states > /workspace/week10_joint_states_hz.txt 2>&1 || true
+
+            ros2 topic info /move_action/_action/status -v > /workspace/week10_move_action_status_info.txt 2>&1 || true
+            ros2 topic info /move_action/_action/feedback -v > /workspace/week10_move_action_feedback_info.txt 2>&1 || true
+            timeout 10s ros2 topic echo /move_action/_action/status --once > /workspace/week10_move_action_status_sample.txt 2>&1 || true
+
+            echo "===== NODES ====="
+            cat /workspace/week10_nodes.txt
+            echo "===== ACTIONS ====="
+            cat /workspace/week10_actions.txt
+            echo "===== JOINT STATES INFO ====="
+            cat /workspace/week10_joint_states_info.txt
+          '
+
+      - name: Run student's actual hs_pick_place node
+        working-directory: world
+        continue-on-error: true
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            timeout 120s ros2 run hand_solo_arm hs_pick_place               > /workspace/week10_hs_pick_place.log 2>&1 || true
+            cat /workspace/week10_hs_pick_place.log
+          '
+
+      - name: Install and launch rqt_tf_tree in workspace container
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ros-jazzy-rqt-tf-tree
+          '
+          docker exec -d "$WS_ID" bash -lc '
+            export DISPLAY=:99
+            source /opt/ros/jazzy/setup.bash
+            ros2 run rqt_tf_tree rqt_tf_tree > /workspace/week10_rqt_tf_tree.log 2>&1
+          '
+          sleep 12
+
+      - name: Capture full TF tree screenshot
+        run: |
+          mkdir -p week10-evidence
+          xdotool search --onlyvisible --name ".*" getwindowname %@ > week10-evidence/window_list.txt 2>&1 || true
+          cat week10-evidence/window_list.txt
+
+          TF_ID=$(xdotool search --onlyvisible --name "rqt_tf_tree" | tail -1 || true)
+          if [ -z "$TF_ID" ]; then
+            TF_ID=$(xdotool search --onlyvisible --name "TF Tree" | tail -1 || true)
+          fi
+          if [ -n "$TF_ID" ]; then
+            xdotool windowsize --sync "$TF_ID" 1500 900 || true
+            xdotool windowmove "$TF_ID" 10 10 || true
+            sleep 3
+            import -display :99 -window "$TF_ID" week10-evidence/week10_full_tf_tree.png || true
+          fi
+
+      - name: Capture MoveIt RViz Pick Carry Place evidence
+        continue-on-error: true
+        run: |
+          mkdir -p week10-evidence
+          RVIZ_ID=$(xdotool search --onlyvisible --name "RViz" | head -1 || true)
+          echo "RViz ID: $RVIZ_ID" | tee week10-evidence/rviz_window_id.txt
+
+          if [ -z "$RVIZ_ID" ]; then
+            import -display :99 -window root week10-evidence/week10_root_no_rviz.png || true
+            exit 0
+          fi
+
+          xdotool windowsize --sync "$RVIZ_ID" 1500 900 || true
+          xdotool windowmove "$RVIZ_ID" 5 5 || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 5
+
+          # Capture the original window first to prove the live MotionPlanning Joints tab.
+          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_before_pose_edits.png || true
+
+          # Force the Joints tab active.
+          xdotool mousemove --window "$RVIZ_ID" 48 484 click 1 || true
+          sleep 2
+
+          # Helper: edit a goal-state joint cell. In the configured MoveIt RViz layout,
+          # value cells are x≈350 and the six rows are y≈555,571,587,603,619,635.
+          set_joint () {
+            local y="$1"
+            local value="$2"
+            xdotool mousemove --window "$RVIZ_ID" 350 "$y" click 1 || true
+            sleep 0.3
+            xdotool key --window "$RVIZ_ID" ctrl+a || true
+            xdotool type --window "$RVIZ_ID" --clearmodifiers --delay 25 -- "$value" || true
+            xdotool key --window "$RVIZ_ID" Return || true
+            sleep 0.5
+          }
+
+          set_pose () {
+            set_joint 555 "$1"
+            set_joint 571 "$2"
+            set_joint 587 "$3"
+            set_joint 603 "$4"
+            set_joint 619 "$5"
+            set_joint 635 "$6"
+            sleep 3
+          }
+
+          # Values in degrees corresponding to the actual hs_pick_place.py radian goals.
+          # Pick waypoint 3 = [0.785, -0.8, 1.4, 0.0, 0.8, 0.0]
+          set_pose 45 -46 80 0 46 0
+          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_pick_position.png || true
+
+          # Carry waypoint 4 = [0.785, -0.3, 1.2, 0.0, 1.0, 0.0]
+          set_pose 45 -17 69 0 57 0
+          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_carry_position.png || true
+
+          # Place waypoint 5 = [-0.785, -0.5, 1.2, 0.0, 1.0, 0.0]
+          set_pose -45 -29 69 0 57 0
+          import -display :99 -window "$RVIZ_ID" week10-evidence/rviz_place_position.png || true
+
+          import -display :99 -window root week10-evidence/week10_root_after_pose_edits.png || true
+
+      - name: Copy runtime logs into evidence artifact
+        if: always()
+        working-directory: world
+        run: |
+          cp workspace/workspace/week10_* ../week10-evidence/ 2>/dev/null || true
+          docker compose logs --no-color --tail=300 omron_handsolo             > ../week10-evidence/omron_handsolo.log 2>&1 || true
+          ls -lah ../week10-evidence/
+
+      - name: Upload Week 10 evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: week10-handsolo-evidence
+          path: week10-evidence/
+
+      - name: Stop official environment
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
