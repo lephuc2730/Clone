@@ -1,0 +1,5 @@
+
+IRS_Warehouse
+/omron_ws/install/handsolo_ros/share/handsolo_ros/rviz/handsolo-moveit.rviz* - RViz
+rviz2
+
