@@ -1,0 +1,24 @@
+name: Mirror IRS_2026_GROUP5 into Clone
+
+on:
+  push:
+    paths:
+      - ".github/workflows/mirror-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Mirror source repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --mirror https://github.com/lephuc2730/IRS_2026_GROUP5.git source.git
+          cd source.git
+          git remote set-url --push origin "https://x-access-token:${GH_TOKEN}@github.com/lephuc2730/Clone.git"
+          git push --mirror origin
