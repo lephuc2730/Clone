@@ -1,0 +1,110 @@
+name: Week 10 RViz Joints Evidence
+
+on:
+  push:
+    paths:
+      - ".github/workflows/week10-rviz-joints.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rviz-joints:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Start headless X11
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick
+          Xvfb :99 -screen 0 1920x1080x24 -ac > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 3
+
+      - name: Start official Hand Solo MoveIt RViz
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          cd world
+          docker compose pull irs-simulation omron_handsolo
+          docker compose up -d irs-simulation omron_handsolo
+          sleep 65
+          docker compose ps
+
+      - name: Capture exact Pick Carry Place joint goal states
+        run: |
+          mkdir -p rviz-evidence
+
+          RVIZ_ID=$(xdotool search --onlyvisible --name "handsolo-moveit.rviz" | head -1 || true)
+          if [ -z "$RVIZ_ID" ]; then
+            RVIZ_ID=$(xdotool search --onlyvisible --name "RViz" | head -1 || true)
+          fi
+          echo "RViz ID: $RVIZ_ID"
+
+          xdotool windowsize --sync "$RVIZ_ID" 1500 900 || true
+          xdotool windowmove "$RVIZ_ID" 5 5 || true
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 4
+
+          # Open MotionPlanning -> Joints tab.
+          xdotool mousemove --window "$RVIZ_ID" 170 367 click 1
+          sleep 3
+          import -display :99 -window root rviz-evidence/rviz_joints_tab_open.png
+
+          # In this configured layout the value column spans approximately x=128..584.
+          # The six goal-state rows are y=441,457,473,489,505,521.
+          # Clicking the progress-bar editor sets the value from the joint's min/max bound.
+          set_click () {
+            local x="$1"; local y="$2"
+            xdotool mousemove --window "$RVIZ_ID" "$x" "$y" click 1
+            sleep 0.5
+          }
+
+          # PICK: [45, -46, 80, 0, 46, 0] degrees.
+          # joint1 +/-360 -> x384; joint2 -46 -> x326;
+          # joint3 +/-166, 80 -> x466; zero -> x356; joint5 46 -> x385.
+          set_click 384 441
+          set_click 326 457
+          set_click 466 473
+          set_click 356 489
+          set_click 385 505
+          set_click 356 521
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 3
+          import -display :99 -window root rviz-evidence/rviz_pick_position_JOINTS.png
+
+          # CARRY: [45, -17, 69, 0, 57, 0] degrees.
+          set_click 384 441
+          set_click 345 457
+          set_click 451 473
+          set_click 356 489
+          set_click 392 505
+          set_click 356 521
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 3
+          import -display :99 -window root rviz-evidence/rviz_carry_position_JOINTS.png
+
+          # PLACE: [-45, -29, 69, 0, 57, 0] degrees.
+          set_click 327 441
+          set_click 337 457
+          set_click 451 473
+          set_click 356 489
+          set_click 392 505
+          set_click 356 521
+          xdotool windowactivate --sync "$RVIZ_ID" || true
+          sleep 3
+          import -display :99 -window root rviz-evidence/rviz_place_position_JOINTS.png
+
+      - name: Upload RViz Joints evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: week10-rviz-joints-evidence
+          path: rviz-evidence/
+
+      - name: Stop environment
+        if: always()
+        run: |
+          cd world
+          docker compose down -v || true
