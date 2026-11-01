@@ -48,7 +48,7 @@ jobs:
           sleep 4
 
           # Open MotionPlanning -> Joints tab.
-          xdotool mousemove --window "$RVIZ_ID" 170 367 click 1
+          xdotool mousemove 174 367 click 1
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_joints_tab_open.png
 
@@ -57,7 +57,7 @@ jobs:
           # Clicking the progress-bar editor sets the value from the joint's min/max bound.
           set_click () {
             local x="$1"; local y="$2"
-            xdotool mousemove --window "$RVIZ_ID" "$x" "$y" click 1
+            xdotool mousemove "$x" "$y" click 1
             sleep 0.5
           }
 
