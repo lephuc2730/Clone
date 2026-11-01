@@ -51,10 +51,8 @@ jobs:
 
           # Calibrated against a real 1920x1080 root capture.
           # MotionPlanning -> Joints tab center is approximately (202,429).
-          xdotool mousemove 202 429
-          xdotool mousedown 1
-          sleep 0.2
-          xdotool mouseup 1
+          xdotool mousemove --window "$RVIZ_ID" 197 424
+          xdotool click 1
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_joints_tab_open.png
 
@@ -64,42 +62,40 @@ jobs:
             local x="$1"; local y="$2"
             xdotool windowraise "$RVIZ_ID" || true
             xdotool windowactivate --sync "$RVIZ_ID" || true
-            xdotool mousemove "$x" "$y"
-            xdotool mousedown 1
-            sleep 0.15
-            xdotool mouseup 1
+            xdotool mousemove --window "$RVIZ_ID" "$x" "$y"
+            xdotool click 1
             sleep 0.45
           }
 
           # PICK waypoint 3: [0.785,-0.8,1.4,0,0.8,0] ~= [45,-46,80,0,46,0] deg.
-          set_click 381 493
-          set_click 323 508
-          set_click 462 523
-          set_click 352 538
-          set_click 381 553
-          set_click 352 568
+          set_click 376 488
+          set_click 318 503
+          set_click 457 518
+          set_click 347 533
+          set_click 376 548
+          set_click 347 563
           xdotool windowraise "$RVIZ_ID" || true
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_pick_position_JOINTS.png
 
           # CARRY waypoint 4: [0.785,-0.3,1.2,0,1.0,0] ~= [45,-17,69,0,57,0] deg.
-          set_click 381 493
-          set_click 341 508
-          set_click 447 523
-          set_click 352 538
-          set_click 388 553
-          set_click 352 568
+          set_click 376 488
+          set_click 336 503
+          set_click 442 518
+          set_click 347 533
+          set_click 383 548
+          set_click 347 563
           xdotool windowraise "$RVIZ_ID" || true
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_carry_position_JOINTS.png
 
           # PLACE waypoint 5: [-0.785,-0.5,1.2,0,1.0,0] ~= [-45,-29,69,0,57,0] deg.
-          set_click 323 493
-          set_click 334 508
-          set_click 447 523
-          set_click 352 538
-          set_click 388 553
-          set_click 352 568
+          set_click 318 488
+          set_click 329 503
+          set_click 442 518
+          set_click 347 533
+          set_click 383 548
+          set_click 347 563
           xdotool windowraise "$RVIZ_ID" || true
           sleep 3
           import -display :99 -window root rviz-evidence/rviz_place_position_JOINTS.png
