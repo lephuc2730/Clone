@@ -62,7 +62,7 @@ jobs:
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             source install/setup.bash
-            timeout 180s ros2 run hand_solo_arm hs_pick_place | tee /tmp/arm_sequence.txt
+            timeout 180s ros2 run hand_solo_arm hs_pick_place 2>&1 | tee /tmp/arm_sequence.txt
             grep -q "Sequence complete" /tmp/arm_sequence.txt
           '
 
