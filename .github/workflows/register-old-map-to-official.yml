@@ -62,31 +62,45 @@ jobs:
           C=S[y0:y1,x0:x1]
           M=known[y0:y1,x0:x1].astype(np.uint8)*255
 
-          # Reduce maps to three levels to suppress SLAM intensity noise.
-          def quant(a):
-              q=np.full(a.shape,127,np.uint8)
-              q[a<80]=0
-              q[a>220]=255
-              return q
+          # Build occupied/free masks. Unknown cells are ignored.
+          Socc=((C < 80) & (M > 0)).astype(np.float32)
+          Sfree=((C > 220) & (M > 0)).astype(np.float32)
+          Oocc=(O < 80).astype(np.uint8)
+          Ofree=(O > 220).astype(np.float32)
 
-          Oq=quant(O)
-          Cq=quant(C)
+          # Distance in pixels to the nearest official occupied cell.
+          # cv2.distanceTransform measures distance to zeros, so invert Oocc:
+          # official occupied cells become 0; everything else becomes 1.
+          dist=cv2.distanceTransform((1-Oocc).astype(np.uint8),cv2.DIST_L2,3)
 
           results=[]
           for k in range(4):
-              Rc=np.rot90(Cq,k)
-              Rm=np.rot90(M,k)
-              h,w=Rc.shape
-              if h>Oq.shape[0] or w>Oq.shape[1]:
+              Tocc=np.rot90(Socc,k).astype(np.float32)
+              Tfree=np.rot90(Sfree,k).astype(np.float32)
+              h,w=Tocc.shape
+              if h>O.shape[0] or w>O.shape[1]:
                   continue
-              # Masked squared-error matching over known cells.
-              score=cv2.matchTemplate(Oq,Rc,cv2.TM_SQDIFF_NORMED,mask=Rm)
+
+              nocc=max(float(Tocc.sum()),1.0)
+              nfree=max(float(Tfree.sum()),1.0)
+
+              # Sum official wall-distance under each student occupied pixel.
+              wall_dist=cv2.matchTemplate(dist,Tocc,cv2.TM_CCORR) / nocc
+
+              # Penalize student free cells that overlap official occupied cells.
+              free_hits_occ=cv2.matchTemplate(Oocc.astype(np.float32),Tfree,cv2.TM_CCORR) / nfree
+
+              # Penalize student occupied cells that fall on known official free space.
+              occ_hits_free=cv2.matchTemplate(Ofree,Tocc,cv2.TM_CCORR) / nocc
+
+              score=wall_dist + 8.0*free_hits_occ + 2.0*occ_hits_free
               minval,_,minloc,_=cv2.minMaxLoc(score)
-              results.append((float(minval),k,minloc,Rc.shape))
+              results.append((float(minval),k,minloc,Tocc.shape,
+                              nocc,nfree))
 
           results.sort()
           best=results[0]
-          minval,k,(mx,my),shape=best
+          minval,k,(mx,my),shape,nocc,nfree=best
 
           # Convert old pickup point from student map coordinates to student pixel.
           px_old=0.15
