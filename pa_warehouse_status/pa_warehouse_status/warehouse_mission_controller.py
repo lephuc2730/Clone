@@ -47,6 +47,8 @@ class WarehouseMissionController(Node):
 
         self.declare_parameter('plc_topic', '/hmi/unified_status')
         self.declare_parameter('plc_auto_trigger', True)
+        # Until a real attachment adapter is verified, never claim delivery.
+        self.declare_parameter('allow_unverified_gripper', False)
         self.declare_parameter('require_initialpose', True)
         self.declare_parameter('weight_trigger_without_location', True)
         self.declare_parameter(
@@ -436,6 +438,12 @@ class WarehouseMissionController(Node):
         )
 
     def _after_grasp_position(self):
+        if not self.get_parameter('allow_unverified_gripper').value:
+            self._fail(
+                'Physical gripper attachment is unverified; '
+                'stopping before carrying a potentially unsecured box'
+            )
+            return
         self._gripper_hook('CLOSE')
         self._schedule(
             0.5,
