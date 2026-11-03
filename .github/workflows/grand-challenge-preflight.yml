@@ -63,9 +63,8 @@ jobs:
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             set -e
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm --symlink-install --event-handlers console_direct+ > /workspace/preflight_build.log 2>&1
@@ -79,8 +78,7 @@ jobs:
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             source install/setup.bash
@@ -99,9 +97,8 @@ jobs:
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec -d "$WS_ID" bash -lc '
+          docker exec -d -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             export DISPLAY=:99
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             source install/setup.bash
@@ -113,8 +110,7 @@ jobs:
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             source /opt/ros/jazzy/setup.bash
             ros2 node list | sort > /workspace/preflight_nodes.txt
             ros2 action list -t | sort > /workspace/preflight_actions.txt
@@ -131,8 +127,7 @@ jobs:
         continue-on-error: true
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             source install/setup.bash
@@ -145,8 +140,7 @@ jobs:
         continue-on-error: true
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
-            export CYCLONEDDS_URI='<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>'
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             source /opt/ros/jazzy/setup.bash
             cd /workspace/irs_ws
             source install/setup.bash
@@ -158,7 +152,7 @@ jobs:
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
-          docker exec "$WS_ID" bash -lc '
+          docker exec -e CYCLONEDDS_URI="<CycloneDDS><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></CycloneDDS>" "$WS_ID" bash -lc '
             {
               echo "=== BUILD ==="
               grep -E "Summary:|Finished <<<|Failed" /workspace/preflight_build.log || true
