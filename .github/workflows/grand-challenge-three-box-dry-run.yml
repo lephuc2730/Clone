@@ -35,6 +35,12 @@ jobs:
           mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
           rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
 
+          # Test candidate conveyor/pickup pose inferred from AMCL global
+          # localization of the simulator spawn near the conveyor.
+          sed -i 's/pickup_x: .*/pickup_x: 11.735/' world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/pa_warehouse_status/config/grand_challenge_params.yaml
+          sed -i 's/pickup_y: .*/pickup_y: 0.281/' world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/pa_warehouse_status/config/grand_challenge_params.yaml
+          sed -i 's/pickup_yaw: .*/pickup_yaw: -0.970/' world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/pa_warehouse_status/config/grand_challenge_params.yaml
+
       - name: Start official Pine-Apple stack
         working-directory: world
         run: |
@@ -81,8 +87,8 @@ jobs:
               header: {frame_id: map},
               pose: {
                 pose: {
-                  position: {x: 0.0, y: 0.0, z: 0.0},
-                  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+                  position: {x: 11.735, y: 0.281, z: 0.0},
+                  orientation: {x: 0.0, y: 0.0, z: -0.466, w: 0.885}
                 },
                 covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
                              0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
