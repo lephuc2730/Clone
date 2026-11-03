@@ -59,12 +59,13 @@ Do **not** start the old Group 5 `hand_solo_virtual_nav/nav_launch.py` at the sa
 `pa_warehouse_status/config/grand_challenge_params.yaml` currently contains:
 
 ```text
-Large shelf:  x=31.0, y=-5.5, yaw=3.14159
-Medium shelf: provisional — must be calibrated
-Small shelf:  provisional — must be calibrated
+Shared right-corner shelf:
+Large:  x=31.0, y=-5.5, yaw=3.14159
+Medium: x=31.0, y=-4.7, yaw=3.14159
+Small:  x=31.0, y=-6.3, yaw=3.14159
 ```
 
-The Large target was selected from the official warehouse map at the marked lower-right shelf/corner. Medium and Small must still be identified on the exact judged layout before relying on automatic full L→M→S operation.
+All three categories now use the same marked lower-right shelf area. They use slightly different Y positions so the robot places Large, Medium and Small along the same shelf rather than returning to one identical drop point.
 
 ## Build tomorrow
 
@@ -175,7 +176,7 @@ docs/evidence/grand_challenge/box_on_shelf_YYYYMMDD_HHMMSS.png
 
 ## Known live-demo limitations
 
-1. **Medium and Small shelf base coordinates are still provisional.**
+1. **The conveyor/pickup base pose still needs one live verification against the judged warehouse.**
 2. The current runtime exposes MoveIt and Nav2, but no confirmed ROS gripper/attach/vacuum action or service has been identified. The controller therefore publishes `/warehouse/gripper_command` with `CLOSE` / `OPEN` hooks at the correct states, but physical/simulated box attachment must still be verified live.
 3. PLC automatic triggering must be observed with real HMI box deployment because idle PLC messages contain empty weight/location fields and null counts.
 
