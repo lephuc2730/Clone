@@ -1,0 +1,95 @@
+name: Grand Challenge Step 6 - Gripper Interface Discovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step6-gripper-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover-gripper:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official simulator and Hand Solo
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Discover possible grasp interfaces
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+
+            echo "=== NODES ==="
+            ros2 node list
+
+            echo "=== TOPICS: grip attach vacuum contact proximity model link box hand ==="
+            ros2 topic list -t | grep -Ei "grip|attach|detach|vacuum|contact|proxim|model|link|box|hand|joint" || true
+
+            echo "=== SERVICES: grip attach vacuum contact proximity model link box hand ==="
+            ros2 service list -t | grep -Ei "grip|attach|detach|vacuum|contact|proxim|model|link|box|hand|joint" || true
+
+            echo "=== ACTIONS: grip attach vacuum contact proximity model link box hand ==="
+            ros2 action list -t | grep -Ei "grip|attach|detach|vacuum|contact|proxim|model|link|box|hand|joint" || true
+
+            echo "=== ALL SERVICES ==="
+            ros2 service list -t
+
+            echo "=== ALL ACTIONS ==="
+            ros2 action list -t
+          '
+
+      - name: Inspect simulator container processes and ROS interfaces
+        working-directory: world
+        run: |
+          SIM_ID=$(docker compose ps -q irs-simulation)
+          docker exec "$SIM_ID" bash -lc '
+            echo "=== PROCESSES ==="
+            ps aux
+            echo "=== ENV ==="
+            env | sort | grep -Ei "ROS|GAZEBO|GZ|IGN" || true
+            if command -v ros2 >/dev/null 2>&1; then
+              source /opt/ros/jazzy/setup.bash || true
+              echo "=== SIM ROS TOPICS ==="
+              ros2 topic list -t | grep -Ei "grip|attach|detach|vacuum|contact|proxim|model|link|box|hand|joint" || true
+              echo "=== SIM ROS SERVICES ==="
+              ros2 service list -t | grep -Ei "grip|attach|detach|vacuum|contact|proxim|model|link|box|hand|joint" || true
+            fi
+          '
+
+      - name: Collect simulator logs
+        if: always()
+        working-directory: world
+        run: |
+          docker compose logs --no-color --tail=1200 irs-simulation omron_handsolo
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
