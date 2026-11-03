@@ -34,8 +34,10 @@ jobs:
           mkdir -p world/workspace/workspace/irs_ws/src
           rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
 
-          # Grand Challenge needs the mobile base + TM arm + MoveIt.
-          sed -i 's/use_base:=false/use_base:=true/' world/compose.yaml
+          # Grand Challenge: official Hand Solo provides base + arm + MoveIt.
+          # Disable its built-in Nav2 so the student's Nav2 stack is the ONLY Nav2 stack.
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+          sed -i 's/use_nav2:=true/use_nav2:=false/' world/compose.yaml
 
       - name: Start warehouse PLC workspace and Hand Solo
         working-directory: world
