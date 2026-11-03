@@ -30,9 +30,7 @@ This repository contains an integrated Grand Challenge mission controller plus t
 | Medium physical grasp | Verify simulator box attachment/grasp |
 | Small physical grasp | Verify simulator box attachment/grasp |
 | Kevin avoidance | Walk dynamic obstacle in front during live Nav2 test |
-| Large shelf | Current base goal: `(31.0, -5.5, π)`; verify exact stop/orientation live |
-| Medium shelf | Calibrate on official full map |
-| Small shelf | Calibrate on official full map |
+| Shared right-corner shelf | Large `(31.0,-5.5,π)`, Medium `(31.0,-4.7,π)`, Small `(31.0,-6.3,π)`; verify exact stop/orientation live |
 | Stable box placement | Verify physical/simulated release and stability |
 | Full L→M→S continuous run | Run after shelf/grasp calibration |
 
@@ -66,16 +64,15 @@ WAITING_FOR_JUDGE_INITIAL_POSE
 6. Echo `/warehouse/mission_status`.
 7. Test **Large only** first.
 8. Confirm pickup arm pose and actual box attachment.
-9. Confirm Large shelf stop near `(31.0, -5.5)`.
-10. Calibrate Medium and Small shelf coordinates.
-11. Run L→M→S continuously.
-12. Put Kevin in front of Hand Solo and verify Nav2 avoidance.
-13. Capture placement evidence.
+9. Confirm the shared right-corner shelf lane goals.
+10. Run L→M→S continuously.
+11. Put Kevin in front of Hand Solo and verify Nav2 avoidance.
+12. Capture placement evidence.
 
 ## Do not claim as completed until seen live
 
 - physical box grasp/attachment
 - stable shelf release
-- Medium/Small final shelf coordinates
+- final live confirmation of the shared shelf lane coordinates
 - full three-box autonomous run
 - Kevin avoidance in the assessed warehouse
