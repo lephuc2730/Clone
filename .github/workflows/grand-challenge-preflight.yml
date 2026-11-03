@@ -39,6 +39,9 @@ jobs:
       - name: Start official Pine-Apple + Hand Solo stack
         working-directory: world
         run: |
+          # The assessed warehouse is simulated; use the TM simulated arm while
+          # keeping the official base, MoveIt and Nav2 stack enabled.
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' compose.yaml
           docker compose pull irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
           docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
           sleep 65
