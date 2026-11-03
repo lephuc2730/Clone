@@ -1,0 +1,194 @@
+name: Grand Challenge Preflight
+
+on:
+  push:
+    paths:
+      - ".github/workflows/grand-challenge-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start headless desktop
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick
+          Xvfb :99 -screen 0 1920x1080x24 -ac > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 2
+
+      - name: Prepare official course environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+
+          # Grand Challenge needs the mobile base + TM arm + MoveIt.
+          sed -i 's/use_base:=false/use_base:=true/' world/compose.yaml
+
+      - name: Start warehouse PLC workspace and Hand Solo
+        working-directory: world
+        run: |
+          docker compose pull irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+          docker compose ps
+
+      - name: Put warehouse HMI into Autonomous Mode
+        continue-on-error: true
+        run: |
+          mkdir -p preflight
+          SIM_ID=$(xdotool search --onlyvisible --name "IRS_Warehouse" | head -1 || true)
+          echo "SIM_ID=$SIM_ID" | tee preflight/hmi_window.txt
+          if [ -n "$SIM_ID" ]; then
+            xdotool key --window "$SIM_ID" r || true
+            sleep 3
+            xdotool mousemove --window "$SIM_ID" 220 183 click 1 || true
+            sleep 3
+            import -display :99 -window root preflight/hmi_autonomous.png || true
+          fi
+
+      - name: Build all student ROS2 packages
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm --symlink-install --event-handlers console_direct+ > /workspace/preflight_build.log 2>&1
+            source install/setup.bash
+            ros2 pkg executables pa_warehouse_status > /workspace/preflight_exec_plc.txt
+            ros2 pkg executables hand_solo_virtual_nav > /workspace/preflight_exec_nav.txt
+            ros2 pkg executables hand_solo_arm > /workspace/preflight_exec_arm.txt
+          '
+
+      - name: Verify PLC topic and listener
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+
+            timeout 15s ros2 topic echo /hmi/unified_status --once > /workspace/preflight_plc_topic.txt 2>&1 || true
+
+            timeout 15s ros2 run pa_warehouse_status plc_hmi_listener > /workspace/preflight_plc_listener.txt 2>&1 &
+            PID=$!
+            sleep 8
+            kill $PID 2>/dev/null || true
+
+            ros2 topic info /hmi/unified_status -v > /workspace/preflight_plc_info.txt 2>&1 || true
+          '
+
+      - name: Launch Nav2
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec -d "$WS_ID" bash -lc '
+            export DISPLAY=:99
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            ros2 launch hand_solo_virtual_nav nav_launch.py > /workspace/preflight_nav_launch.log 2>&1
+          '
+          sleep 25
+
+      - name: Verify Nav2 lifecycle and interfaces
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            ros2 node list | sort > /workspace/preflight_nodes.txt
+            ros2 action list -t | sort > /workspace/preflight_actions.txt
+            for n in map_server amcl controller_server planner_server behavior_server bt_navigator waypoint_follower velocity_smoother; do
+              echo "===== $n =====" >> /workspace/preflight_lifecycle.txt
+              ros2 lifecycle get /$n >> /workspace/preflight_lifecycle.txt 2>&1 || true
+            done
+            timeout 10s ros2 topic echo /virtual_hand_solo/scan --once > /workspace/preflight_scan.txt 2>&1 || true
+            timeout 10s ros2 topic echo /virtual_hand_solo/odom --once > /workspace/preflight_odom.txt 2>&1 || true
+          '
+
+      - name: Run full Nav2 waypoint route including Home
+        working-directory: world
+        continue-on-error: true
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            timeout 180s ros2 run hand_solo_virtual_nav hs_waypoint_follower > /workspace/preflight_waypoints.log 2>&1 || true
+            cat /workspace/preflight_waypoints.log
+          '
+
+      - name: Run MoveIt arm sequence in same environment
+        working-directory: world
+        continue-on-error: true
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            timeout 120s ros2 run hand_solo_arm hs_pick_place > /workspace/preflight_arm.log 2>&1 || true
+            cat /workspace/preflight_arm.log
+          '
+
+      - name: Summarize software readiness
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            {
+              echo "=== BUILD ==="
+              grep -E "Summary:|Finished <<<|Failed" /workspace/preflight_build.log || true
+              echo
+              echo "=== PLC ==="
+              head -80 /workspace/preflight_plc_topic.txt || true
+              echo
+              echo "=== NAV LIFECYCLE ==="
+              cat /workspace/preflight_lifecycle.txt || true
+              echo
+              echo "=== WAYPOINT ROUTE ==="
+              cat /workspace/preflight_waypoints.log || true
+              echo
+              echo "=== ARM ==="
+              cat /workspace/preflight_arm.log || true
+            } > /workspace/PREFLIGHT_SUMMARY.txt
+            cat /workspace/PREFLIGHT_SUMMARY.txt
+          '
+
+      - name: Gather evidence
+        if: always()
+        run: |
+          mkdir -p preflight
+          cp -a world/workspace/workspace/preflight_* preflight/ 2>/dev/null || true
+          docker compose -f world/compose.yaml logs --no-color --tail=300 omron_handsolo > preflight/omron_handsolo.log 2>&1 || true
+          docker compose -f world/compose.yaml logs --no-color --tail=250 irs-simulation > preflight/irs_simulation.log 2>&1 || true
+          ls -lah preflight/
+
+      - name: Upload preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grand-challenge-preflight
+          path: preflight/
+
+      - name: Stop environment
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
