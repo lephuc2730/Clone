@@ -83,14 +83,24 @@ source install/setup.bash
 
 ## Start the official course system
 
-From the folder containing the course `compose.yaml`:
+From the folder containing the course `compose.yaml`, make sure the Hand Solo command uses the simulated TM arm **and keeps the base, MoveIt and Nav2 enabled**:
+
+```text
+tm_use_simulation:=true use_arm:=true use_base:=true use_moveit:=true use_nav2:=true use_rviz:=true
+```
+
+A quick way to switch the current course compose file from `false` to `true` is:
 
 ```bash
+sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' compose.yaml
+grep -A2 'command: ros2 launch handsolo_ros' compose.yaml
 docker compose pull
 docker compose up
 ```
 
-The current official `omron_handsolo` launch provides the mobile base, arm, MoveIt, Nav2 and RViz.
+This matters: the live dry-run showed MoveIt execution returning `CONTROL_FAILED` with `tm_use_simulation:=false`, while the SAFE_ARM motion completed when simulation mode was enabled. The course manipulation lab also uses `tm_use_simulation:=true`.
+
+The official `omron_handsolo` launch then provides the mobile base, arm, MoveIt, Nav2 and RViz.
 
 ## Preflight
 
