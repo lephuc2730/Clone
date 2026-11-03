@@ -1,0 +1,113 @@
+name: Grand Challenge Step 3D - Nav2 BT Timeout Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step3d-nav2-bt-timeout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nav2-bt-timeout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official stack
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Apply Nav2 timing fixes
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            ros2 param set /amcl update_min_d 0.0
+            ros2 param set /amcl update_min_a 0.0
+            ros2 param set /amcl transform_tolerance 3.0
+            ros2 param set /controller_server FollowPath.transform_tolerance 3.0
+            ros2 param set /local_costmap/local_costmap transform_tolerance 3.0
+            ros2 param set /bt_navigator default_server_timeout 5000
+            ros2 param set /bt_navigator wait_for_service_timeout 5000 || true
+
+            echo "=== lifecycle ==="
+            ros2 lifecycle get /controller_server
+            ros2 lifecycle get /planner_server
+            ros2 lifecycle get /bt_navigator
+            echo "=== timeout ==="
+            ros2 param get /bt_navigator default_server_timeout
+          '
+
+      - name: Initialize at simulator default start
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            POSE="{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0.0685,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+            ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$POSE" >/dev/null
+            sleep 4
+            timeout 5s ros2 topic echo /amcl_pose --once
+          '
+
+      - name: Test pickup navigation
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          set +e
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            timeout 180s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {
+                header: {frame_id: map},
+                pose: {
+                  position: {x: 5.0, y: 0.0, z: 0.0},
+                  orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+                }
+              }
+            }" --feedback
+          ' | tee nav_goal.txt
+          RC=${PIPESTATUS[0]}
+
+          echo "=== Nav2 logs ==="
+          docker compose logs --no-color --tail=700 omron_handsolo | grep -Ei "Timed out|Transform data too old|Failed to transform|follow_path|Goal failed|Goal succeeded|aborting|Reached" || true
+          echo "=== action result ==="
+          tail -100 nav_goal.txt || true
+
+          if grep -q "Goal finished with status: SUCCEEDED" nav_goal.txt; then
+            exit 0
+          fi
+          exit 1
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
