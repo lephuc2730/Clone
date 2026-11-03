@@ -60,16 +60,17 @@ class WarehouseMissionController(Node):
         self.declare_parameter('pickup_y', -0.15)
         self.declare_parameter('pickup_yaw', -math.pi / 2.0)
 
-        # Category-specific shelf poses. The exact judged shelf goals must be
-        # confirmed in the live warehouse map before the assessed run.
-        self.declare_parameter('large_shelf_x', 0.10)
-        self.declare_parameter('large_shelf_y', -0.50)
-        self.declare_parameter('large_shelf_yaw', 0.0)
-        self.declare_parameter('medium_shelf_x', 0.75)
-        self.declare_parameter('medium_shelf_y', 0.00)
-        self.declare_parameter('medium_shelf_yaw', math.pi / 2.0)
-        self.declare_parameter('small_shelf_x', 0.00)
-        self.declare_parameter('small_shelf_y', 0.60)
+        # Shared right-corner shelf. Each box category uses a different Y
+        # lane along the same shelf frontage so all three boxes can be stored
+        # on one large shelf without returning to one identical drop point.
+        self.declare_parameter('large_shelf_x', 31.0)
+        self.declare_parameter('large_shelf_y', -5.5)
+        self.declare_parameter('large_shelf_yaw', math.pi)
+        self.declare_parameter('medium_shelf_x', 31.0)
+        self.declare_parameter('medium_shelf_y', -4.7)
+        self.declare_parameter('medium_shelf_yaw', math.pi)
+        self.declare_parameter('small_shelf_x', 31.0)
+        self.declare_parameter('small_shelf_y', -6.3)
         self.declare_parameter('small_shelf_yaw', math.pi)
 
         plc_topic = str(self.get_parameter('plc_topic').value)
@@ -274,11 +275,21 @@ class WarehouseMissionController(Node):
 
         box = data.get('box') or {}
         counts = data.get('counts') or {}
-        detected_from_counts = self._detect_count_increments(counts)
 
-        if detected_from_counts:
+        # When all category counters are valid, use counters as the single
+        # source of truth. This avoids double-queuing the same physical box
+        # when its weight/location fields change while travelling on the
+        # conveyor after the count has already incremented.
+        count_values = [
+            self._coerce_int(counts.get('big')),
+            self._coerce_int(counts.get('medium')),
+            self._coerce_int(counts.get('small')),
+        ]
+        if all(value is not None for value in count_values):
+            self._detect_count_increments(counts)
             return
 
+        # Weight is only a fallback when PLC category counters are unavailable.
         weight = self._parse_weight(box.get('weight_raw'))
         if weight is None:
             return
