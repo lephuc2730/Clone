@@ -7,6 +7,9 @@ on:
       - '.github/workflows/grand-challenge-step4-shelf-roundtrip.yml'
       - 'scripts/apply_grand_challenge_nav2_tuning.sh'
       - 'scripts/initialize_grand_challenge_localization.sh'
+      - 'scripts/check_grand_challenge_tf.py'
+      - 'scripts/publish_initial_pose.py'
+      - 'scripts/initialize_grand_challenge_localization.sh'
       - 'scripts/publish_initial_pose.py'
   workflow_dispatch:
 
