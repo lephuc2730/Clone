@@ -9,10 +9,7 @@ on:
       - 'scripts/initialize_grand_challenge_localization.sh'
       - 'scripts/check_grand_challenge_tf.py'
       - 'scripts/publish_initial_pose.py'
-      - 'scripts/check_grand_challenge_tf.py'
-      - 'config/handsolo-nav2-grand-challenge.yaml'
-      - 'scripts/initialize_grand_challenge_localization.sh'
-      - 'scripts/publish_initial_pose.py'
+      - 'scripts/wait_for_tf.py'
   workflow_dispatch:
 
 permissions:
@@ -48,17 +45,6 @@ jobs:
         run: |
           docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
           sleep 70
-
-      - name: Install Grand Challenge Nav2 config before testing
-        working-directory: world
-        run: |
-          TARGET=$(docker exec omron_handsolo sh -lc "find / -type f -path '*/handsolo_ros/config/handsolo-nav2.yaml' 2>/dev/null | head -1")
-          echo "Hand Solo Nav2 config: $TARGET"
-          test -n "$TARGET"
-          docker cp ../student/config/handsolo-nav2-grand-challenge.yaml omron_handsolo:"$TARGET"
-          docker restart omron_handsolo
-          sleep 35
-          docker compose ps omron_handsolo
 
       - name: Build project
         working-directory: world
