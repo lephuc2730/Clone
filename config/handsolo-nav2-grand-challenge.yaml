@@ -124,7 +124,7 @@ controller_server:
       sim_time: 1.2
       linear_granularity: 0.05
       angular_granularity: 0.025
-      transform_tolerance: 5.0
+      transform_tolerance: 10.0
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
@@ -146,7 +146,7 @@ local_costmap:
     ros__parameters:
       update_frequency: 10.0
       publish_frequency: 5.0
-      transform_tolerance: 5.0
+      transform_tolerance: 10.0
       global_frame: virtual_hand_solo/odom
       robot_base_frame: virtual_hand_solo/base_link
       use_sim_time: false
@@ -190,7 +190,7 @@ global_costmap:
     ros__parameters:
       update_frequency: 2.0
       publish_frequency: 1.0
-      transform_tolerance: 5.0
+      transform_tolerance: 10.0
       global_frame: map
       robot_base_frame: virtual_hand_solo/base_link
       use_sim_time: false
@@ -275,7 +275,7 @@ behavior_server:
     global_frame: map
     local_frame: virtual_hand_solo/odom
     robot_base_frame: virtual_hand_solo/base_link
-    transform_tolerance: 5.0
+    transform_tolerance: 10.0
     use_sim_time: false
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
