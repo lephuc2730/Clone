@@ -1,65 +1,189 @@
-# IRS_2026_GROUP5 - Weeks 5 and 6
+# IRS_2026_GROUP5 — Pine-Apple Grand Challenge
 
-This repository contains the project work for **12059 Industrial Robots and Systems** covering:
+This repository now contains the integrated Group 5 solution for **12059 Industrial Robots and Systems — Pine-Apple Grand Challenge 2026** while preserving the earlier Week 5/6/10 lab work.
 
-- **Week 5 / Lab 04:** Pine-Apple ROS2 Communication Hub
-- **Week 6 / Lab 05:** Hand Solo's Mapping Mission
-
-
-
-## Week 5
-
-The `pa_warehouse_status` package contains:
-
-- `pineapple_gossip_bot`: publishes `std_msgs/String` status messages to `/status_updates` every 2 seconds.
-- `plc_hmi_listener`: subscribes to a configurable PLC/HMI status topic and parses the JSON fields required by Lab 04.
-- `plc_topic_probe`: checks likely String status topics for JSON containing `stamp`, `box`, and `counts`.
-
-Build and run:
-
-```bash
-cd /workspace/irs_ws
-colcon build --packages-select pa_warehouse_status
-source install/local_setup.bash
-ros2 run pa_warehouse_status pineapple_gossip_bot
-```
-
-To identify the live PLC JSON topic:
-
-```bash
-ros2 run pa_warehouse_status plc_topic_probe
-```
-
-## Week 6
-
-The `hand_solo_virtual_nav` package contains:
-
-- `launch/mapping_launch.py`
-- `config/pa_slam_params.yaml`
-- `rviz/pa_rviz_mapping.rviz`
-- starter node `hs_waypoint_follower`
-
-Build and launch:
-
-```bash
-cd /workspace/irs_ws
-colcon build --packages-select hand_solo_virtual_nav
-source install/local_setup.bash
-ros2 launch hand_solo_virtual_nav mapping_launch.py
-```
-
-The final map must be generated during a real mapping run and saved as:
+## Integrated Grand Challenge flow
 
 ```text
-pa_warehouse_map_01.pgm
-pa_warehouse_map_01.yaml
+Judge places Hand Solo at arbitrary start
+        ↓
+RViz 2D Pose Estimate → AMCL localisation
+        ↓
+PLC/HMI deploys + sorts box
+        ↓
+/hmi/unified_status
+        ↓
+Mission controller detects Large / Medium / Small
+        ↓
+Safe arm position
+        ↓
+Nav2 → pickup/conveyor
+        ↓
+MoveIt → pick approach / grasp pose
+        ↓
+Arm retracts to SAFE travel pose
+        ↓
+Nav2 → category shelf
+   ↳ live lidar costmaps handle dynamic obstacles ("Kevin")
+        ↓
+MoveIt → place pose
+        ↓
+OPEN hook + 2 s placement hold
+        ↓
+Safe arm retract
+        ↓
+Nav2 → pickup/home
+        ↓
+Next queued box automatically
 ```
 
-## Evidence note
+## Main Grand Challenge files
 
-The source code, package structure and portfolio text can be prepared without Ubuntu. The Robot HMI screenshot, exact live PLC JSON confirmation, final TF-tree screenshot, RViz mapping screenshot and generated SLAM map require the running course simulation, so they are not fabricated in this repository.
+- `pa_warehouse_status/pa_warehouse_status/warehouse_mission_controller.py` — integrated state machine
+- `pa_warehouse_status/config/grand_challenge_params.yaml` — pickup + shelf targets
+- `pa_warehouse_status/launch/grand_challenge.launch.py` — controller launch
+- `scripts/grand_challenge_preflight.sh` — checks PLC/Nav2/MoveIt/lidar interfaces
+- `scripts/capture_box_on_shelf.sh` — screenshot helper after shelf release
+- `.github/workflows/grand-challenge-preflight.yml` — official full-stack safety-locked validation
+- `.github/workflows/grand-challenge-build-check.yml` — build/static validation
+- `.github/workflows/grand-challenge-runtime-probe.yml` — full official runtime interface probe
 
+## Important map choice
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/5d68b84e-ea67-4727-88fc-d4c43a616657" />
+For the Grand Challenge, use the **official Hand Solo/Nav2 stack and official full warehouse map** launched by the course Docker environment.
 
+Do **not** start the old Group 5 `hand_solo_virtual_nav/nav_launch.py` at the same time as the official Hand Solo Nav2 stack. The Group 5 map is retained for the earlier lab evidence, but it is only a partial SLAM map and does not cover the right-side warehouse shelf around x≈31.
 
+## Current shelf targets
+
+`pa_warehouse_status/config/grand_challenge_params.yaml` currently contains:
+
+```text
+Large shelf:  x=31.0, y=-5.5, yaw=3.14159
+Medium shelf: provisional — must be calibrated
+Small shelf:  provisional — must be calibrated
+```
+
+The Large target was selected from the official warehouse map at the marked lower-right shelf/corner. Medium and Small must still be identified on the exact judged layout before relying on automatic full L→M→S operation.
+
+## Build tomorrow
+
+From the course workspace:
+
+```bash
+cd /workspace/irs_ws/src/IRS_2026_GROUP5
+git pull origin main
+
+cd /workspace/irs_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm
+source install/setup.bash
+```
+
+## Start the official course system
+
+From the folder containing the course `compose.yaml`:
+
+```bash
+docker compose pull
+docker compose up
+```
+
+The current official `omron_handsolo` launch provides the mobile base, arm, MoveIt, Nav2 and RViz.
+
+## Preflight
+
+Inside the ROS workspace/container:
+
+```bash
+cd /workspace/irs_ws
+source install/setup.bash
+bash src/IRS_2026_GROUP5/scripts/grand_challenge_preflight.sh
+```
+
+Required interfaces:
+
+```text
+/hmi/unified_status
+/virtual_hand_solo/scan
+/amcl_pose
+/move_action
+/navigate_to_pose
+/amcl
+/move_group
+```
+
+## Launch integrated controller
+
+```bash
+source /workspace/irs_ws/install/setup.bash
+ros2 launch pa_warehouse_status grand_challenge.launch.py
+```
+
+Watch the state machine:
+
+```bash
+ros2 topic echo /warehouse/mission_status
+```
+
+Before the first cycle, use **2D Pose Estimate** in RViz at the robot's judge-specified starting location. The controller intentionally waits for `/initialpose` and an AMCL update.
+
+## Manual test/fallback
+
+```bash
+ros2 service call /warehouse/start_large std_srvs/srv/Trigger "{}"
+ros2 service call /warehouse/start_medium std_srvs/srv/Trigger "{}"
+ros2 service call /warehouse/start_small std_srvs/srv/Trigger "{}"
+ros2 service call /warehouse/retry_current std_srvs/srv/Trigger "{}"
+```
+
+## PLC classification
+
+Preferred detection is by PLC count increments:
+
+```text
+counts.big     → Large
+counts.medium  → Medium
+counts.small   → Small
+```
+
+Weight fallback:
+
+```text
+> 10 kg   → Large
+5–10 kg   → Medium
+< 5 kg    → Small
+```
+
+## Dynamic obstacle avoidance
+
+The official Nav2 stack uses the live `/virtual_hand_solo/scan` lidar in its costmaps. The intended Grand Challenge behavior is to let Nav2 detect and replan/control around Kevin rather than hard-coding an avoidance route.
+
+## Shelf placement screenshot
+
+Run this on the Ubuntu host from the course Docker folder before the mission:
+
+```bash
+bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/capture_box_on_shelf.sh
+```
+
+When the controller enters `BOX_RELEASED_ON_SHELF`, the script saves a screenshot under:
+
+```text
+docs/evidence/grand_challenge/box_on_shelf_YYYYMMDD_HHMMSS.png
+```
+
+## Known live-demo limitations
+
+1. **Medium and Small shelf base coordinates are still provisional.**
+2. The current runtime exposes MoveIt and Nav2, but no confirmed ROS gripper/attach/vacuum action or service has been identified. The controller therefore publishes `/warehouse/gripper_command` with `CLOSE` / `OPEN` hooks at the correct states, but physical/simulated box attachment must still be verified live.
+3. PLC automatic triggering must be observed with real HMI box deployment because idle PLC messages contain empty weight/location fields and null counts.
+
+## Existing semester work retained
+
+- `pa_warehouse_status` — Week 5 PLC/ROS communication
+- `hand_solo_virtual_nav` — Week 6/7 mapping and Nav2 lab work
+- `hand_solo_arm` — Week 10 MoveIt pick/carry/place joint sequence
+- `docs/evidence/` — prior lab runtime evidence
+
+See `docs/GRAND_CHALLENGE_READINESS.md` for the rubric-by-rubric readiness check.
