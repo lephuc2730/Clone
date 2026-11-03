@@ -1,0 +1,128 @@
+name: Grand Challenge Step 3 - Nav2 Pickup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step3-nav-pickup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nav-pickup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start headless display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official course environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official Pine-Apple stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+          docker compose ps
+
+      - name: Build project
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm
+            source install/setup.bash
+          '
+
+      - name: Initialize AMCL robustly
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            POSE_MSG="{
+              header: {frame_id: map},
+              pose: {
+                pose: {
+                  position: {x: 11.735, y: 0.281, z: 0.0},
+                  orientation: {x: 0.0, y: 0.0, z: -0.466, w: 0.885}
+                },
+                covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0685, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0685]
+              }
+            }"
+
+            for attempt in 1 2 3 4 5; do
+              ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$POSE_MSG" >/dev/null
+              if timeout 5s ros2 topic echo /amcl_pose --once >/tmp/amcl_pose.txt 2>/dev/null; then
+                cat /tmp/amcl_pose.txt
+                echo "AMCL_LOCALIZED"
+                exit 0
+              fi
+              sleep 2
+            done
+            exit 1
+          '
+
+      - name: Test Nav2 to mapped conveyor pickup
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            echo "Sending pickup goal (5.0, 0.0, pi)"
+            timeout 300s ros2 action send_goal               /navigate_to_pose               nav2_msgs/action/NavigateToPose               "{
+                pose: {
+                  header: {frame_id: map},
+                  pose: {
+                    position: {x: 5.0, y: 0.0, z: 0.0},
+                    orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+                  }
+                }
+              }"               --feedback | tee /tmp/nav_pickup.txt
+
+            grep -Eq "status: 4|SUCCEEDED|Goal succeeded" /tmp/nav_pickup.txt
+          '
+
+      - name: Capture final pose
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            echo "=== final AMCL pose ==="
+            timeout 5s ros2 topic echo /amcl_pose --once || true
+          '
+
+      - name: Stop environment
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
