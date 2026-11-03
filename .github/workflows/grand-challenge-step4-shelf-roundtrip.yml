@@ -63,25 +63,14 @@ jobs:
             bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/apply_grand_challenge_nav2_tuning.sh
           '
 
-      - name: Wait for official AMCL initial pose and stable TF
+      - name: Initialize localization robustly
         working-directory: world
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
           docker exec "$WS_ID" bash -lc '
             set -e
             source /opt/ros/jazzy/setup.bash
-
-            echo "Using official Hand Solo AMCL initial_pose=[0,0,0,0]; no manual /initialpose injection."
-            for attempt in 1 2 3 4 5; do
-              if timeout 5s ros2 topic echo /amcl_pose --once >/tmp/amcl.txt 2>/dev/null &&                  timeout 5s ros2 run tf2_ros tf2_echo map virtual_hand_solo/base_link >/tmp/tf.txt 2>/dev/null; then
-                cat /tmp/amcl.txt
-                tail -20 /tmp/tf.txt
-                echo "AMCL_AND_TF_READY"
-                exit 0
-              fi
-              sleep 2
-            done
-            exit 1
+            bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/initialize_grand_challenge_localization.sh
           '
 
       - name: Navigate to pickup
