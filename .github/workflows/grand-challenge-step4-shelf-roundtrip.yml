@@ -1,0 +1,136 @@
+name: Grand Challenge Step 4 - Shelf Round Trip
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step4-shelf-roundtrip.yml'
+      - 'scripts/apply_grand_challenge_nav2_tuning.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shelf-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Build project
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm
+          '
+
+      - name: Apply proven Nav2 tuning
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/apply_grand_challenge_nav2_tuning.sh
+          '
+
+      - name: Initialize simulator start
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            POSE="{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0.0685,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+            ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$POSE" >/dev/null
+            sleep 4
+            timeout 5s ros2 topic echo /amcl_pose --once
+          '
+
+      - name: Navigate to pickup
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 180s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 5.0, y: 0.0, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/pickup.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/pickup.txt
+          '
+
+      - name: Navigate pickup to Large shelf
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 31.0, y: -5.5, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/shelf.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/shelf.txt
+          '
+
+      - name: Return Large shelf to pickup
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 5.0, y: 0.0, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/return.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/return.txt
+          '
+
+      - name: Collect Nav2 logs
+        if: always()
+        working-directory: world
+        run: |
+          docker compose logs --no-color --tail=800 omron_handsolo | grep -Ei "Goal succeeded|Reached the goal|Transform data too old|Failed to transform|aborting|planner|controller" || true
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
