@@ -584,14 +584,16 @@ class WarehouseMissionController(Node):
 
     def _arm_result(self, future, sequence, index, on_complete):
         result = future.result()
-        if result is None or result.status != GoalStatus.STATUS_SUCCEEDED:
-            status = None if result is None else result.status
-            moveit_error = None
-            if result is not None:
-                try:
-                    moveit_error = result.result.error_code.val
-                except Exception:
-                    pass
+        status = None if result is None else result.status
+        moveit_error = None
+        if result is not None:
+            try:
+                moveit_error = result.result.error_code.val
+            except (AttributeError, TypeError):
+                pass
+        # GoalStatus SUCCEEDED only reports the action transport result.
+        # MoveIt may still return PLANNING_FAILED or CONTROL_FAILED.
+        if status != GoalStatus.STATUS_SUCCEEDED or moveit_error != 1:
             self._fail(
                 f'Arm waypoint {index + 1} failed '
                 f'(status={status}, moveit_error={moveit_error})'
