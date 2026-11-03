@@ -682,7 +682,24 @@ class WarehouseMissionController(Node):
         result = future.result()
         if result is None or result.status != GoalStatus.STATUS_SUCCEEDED:
             status = None if result is None else result.status
-            self._fail(f'Nav2 {label} failed (status={status})')
+            error_code = None
+            error_msg = ''
+            if result is not None:
+                try:
+                    error_code = result.result.error_code
+                except Exception:
+                    pass
+                try:
+                    error_msg = result.result.error_msg
+                except Exception:
+                    pass
+            detail = (
+                f'Nav2 {label} failed '
+                f'(status={status}, error_code={error_code}'
+                + (f', error_msg={error_msg}' if error_msg else '')
+                + ')'
+            )
+            self._fail(detail)
             return
 
         self.get_logger().info(f'Nav2 {label} reached successfully')
