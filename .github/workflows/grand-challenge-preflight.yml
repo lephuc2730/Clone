@@ -104,6 +104,11 @@ jobs:
             echo "=== PLC sample ==="
             timeout 5s ros2 topic echo /hmi/unified_status --once || true
 
+            echo "=== Ground-truth robot pose ==="
+            timeout 5s ros2 topic echo /virtual_hand_solo/ground_truth_odom --once || true
+            echo "=== AMCL robot pose ==="
+            timeout 5s ros2 topic echo /amcl_pose --once || true
+
             echo "=== Safety-locked manual queue test ==="
             ros2 service call /warehouse/start_large std_srvs/srv/Trigger "{}"
             sleep 2
