@@ -1,0 +1,197 @@
+name: Grand Challenge Step 10 - Medium Small Shelf Navigation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step10-medium-small-nav.yml'
+      - 'scripts/apply_grand_challenge_nav2_tuning.sh'
+      - 'scripts/initialize_grand_challenge_localization.sh'
+      - 'scripts/check_grand_challenge_tf.py'
+      - 'scripts/publish_initial_pose.py'
+      - 'scripts/wait_for_tf.py'
+      - 'config/handsolo-nav2-grand-challenge.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shelf-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Install Grand Challenge Nav2 config before testing
+        working-directory: world
+        run: |
+          TARGET=$(docker exec omron_handsolo sh -lc "find / -type f -path '*/handsolo_ros/config/handsolo-nav2.yaml' 2>/dev/null | head -1")
+          echo "Hand Solo Nav2 config: $TARGET"
+          test -n "$TARGET"
+          docker cp ../student/config/handsolo-nav2-grand-challenge.yaml omron_handsolo:"$TARGET"
+          docker restart omron_handsolo
+          sleep 35
+          docker compose ps omron_handsolo
+
+      - name: Verify pre-start Nav2 tolerance loaded
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          for attempt in 1 2 3 4 5 6 7 8; do
+            VALUE=$(docker exec "$WS_ID" bash -lc 'source /opt/ros/jazzy/setup.bash; ros2 param get /controller_server FollowPath.transform_tolerance 2>/dev/null' || true)
+            echo "attempt $attempt: $VALUE"
+            if echo "$VALUE" | grep -q "10.0"; then
+              echo "NAV2_TOLERANCE_READY"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "ERROR: controller did not load 10.0s transform tolerance."
+          exit 1
+
+      - name: Build project
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm
+          '
+
+      - name: Apply proven Nav2 tuning
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/apply_grand_challenge_nav2_tuning.sh
+          '
+
+      - name: Initialize localization robustly
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/initialize_grand_challenge_localization.sh
+          '
+
+      - name: Navigate to pickup
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 180s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 5.0, y: 0.0, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/pickup.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/pickup.txt
+          '
+
+      - name: Navigate to Medium shelf
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 31, y: -4.7, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/Medium_shelf.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/Medium_shelf.txt
+          '
+
+      - name: Navigate to pickup after Medium
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 5, y: 0, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/pickup_after_Medium.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/pickup_after_Medium.txt
+          '
+
+      - name: Navigate to Small shelf
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 31, y: -6.3, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/Small_shelf.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/Small_shelf.txt
+          '
+
+      - name: Navigate to pickup after Small
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -o pipefail
+            source /opt/ros/jazzy/setup.bash
+            timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {header: {frame_id: map}, pose: {
+                position: {x: 5, y: 0, z: 0.0},
+                orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+              }}
+            }" --feedback | tee /tmp/pickup_after_Small.txt
+            grep -q "Goal finished with status: SUCCEEDED" /tmp/pickup_after_Small.txt
+          '
+
+      - name: Collect Nav2 logs
+        if: always()
+        working-directory: world
+        run: |
+          docker compose logs --no-color --tail=800 omron_handsolo | grep -Ei "Goal succeeded|Reached the goal|Transform data too old|Failed to transform|aborting|planner|controller" || true
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
