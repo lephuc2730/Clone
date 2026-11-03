@@ -29,14 +29,10 @@ ros2 service call /global_costmap/clear_entirely_global_costmap nav2_msgs/srv/Cl
 sleep 2
 
 echo "Waiting for fresh map -> base_link TF..."
-for attempt in 1 2 3 4 5; do
-  if timeout 4s ros2 run tf2_ros tf2_echo map virtual_hand_solo/base_link >/tmp/grand_challenge_tf.txt 2>/dev/null; then
-    tail -20 /tmp/grand_challenge_tf.txt
-    echo "LOCALIZATION_READY"
-    exit 0
-  fi
-  sleep 1
-done
+if python3 "$SCRIPT_DIR/check_grand_challenge_tf.py"; then
+  echo "LOCALIZATION_READY"
+  exit 0
+fi
 
 echo "ERROR: map -> base_link TF was not ready."
 exit 1
