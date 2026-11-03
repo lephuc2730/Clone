@@ -56,9 +56,9 @@ class WarehouseMissionController(Node):
         self.declare_parameter('manual_category', 'large')
 
         # Pickup/home pose. The robot returns here after every completed box.
-        self.declare_parameter('pickup_x', 0.15)
-        self.declare_parameter('pickup_y', -0.15)
-        self.declare_parameter('pickup_yaw', -math.pi / 2.0)
+        self.declare_parameter('pickup_x', 5.0)
+        self.declare_parameter('pickup_y', 0.0)
+        self.declare_parameter('pickup_yaw', math.pi)
 
         # Shared right-corner shelf. Each box category uses a different Y
         # lane along the same shelf frontage so all three boxes can be stored
