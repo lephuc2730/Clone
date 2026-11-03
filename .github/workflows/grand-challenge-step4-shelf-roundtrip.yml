@@ -65,13 +65,13 @@ jobs:
           for attempt in 1 2 3 4 5 6 7 8; do
             VALUE=$(docker exec "$WS_ID" bash -lc 'source /opt/ros/jazzy/setup.bash; ros2 param get /controller_server FollowPath.transform_tolerance 2>/dev/null' || true)
             echo "attempt $attempt: $VALUE"
-            if echo "$VALUE" | grep -q "5.0"; then
+            if echo "$VALUE" | grep -q "10.0"; then
               echo "NAV2_TOLERANCE_READY"
               exit 0
             fi
             sleep 3
           done
-          echo "ERROR: controller did not load 5.0s transform tolerance."
+          echo "ERROR: controller did not load 10.0s transform tolerance."
           exit 1
 
       - name: Build project
