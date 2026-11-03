@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Grand Challenge Nav2 runtime tuning for the official Hand Solo stack.
 # The stock course values are tight enough to trigger stale-TF / action-server
