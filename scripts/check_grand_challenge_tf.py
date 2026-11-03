@@ -12,7 +12,7 @@ def main():
     buffer = Buffer()
     listener = TransformListener(buffer, node)
 
-    deadline = time.monotonic() + 10.0
+    deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.2)
         if buffer.can_transform('map', 'virtual_hand_solo/base_link', Time()):
