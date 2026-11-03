@@ -1,0 +1,79 @@
+name: Grand Challenge Auto Localization Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-auto-localize.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official stack
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Probe global localization and localize
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            echo "=== Localization services ==="
+            ros2 service list -t | grep -Ei "global|localiz|amcl" || true
+
+            if ros2 service list | grep -Fxq /reinitialize_global_localization; then
+              echo "Calling /reinitialize_global_localization"
+              ros2 service call /reinitialize_global_localization std_srvs/srv/Empty "{}" || true
+            elif ros2 service list | grep -Fxq /amcl/reinitialize_global_localization; then
+              echo "Calling /amcl/reinitialize_global_localization"
+              ros2 service call /amcl/reinitialize_global_localization std_srvs/srv/Empty "{}" || true
+            else
+              echo "NO_GLOBAL_LOCALIZATION_SERVICE"
+            fi
+
+            echo "=== Spin robot to collect lidar ==="
+            timeout 25s ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist               "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.35}}" || true
+            ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist               "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" || true
+            sleep 8
+
+            echo "=== AMCL pose after global localization ==="
+            timeout 8s ros2 topic echo /amcl_pose --once || true
+            echo "=== map->odom transform ==="
+            timeout 8s ros2 run tf2_ros tf2_echo map virtual_hand_solo/odom || true
+            echo "=== Ground truth odom ==="
+            timeout 5s ros2 topic echo /virtual_hand_solo/ground_truth_odom --once || true
+          '
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
