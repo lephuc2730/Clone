@@ -1,0 +1,116 @@
+name: Grand Challenge Step 3C - Nav2 TF Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step3c-nav2-tf-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nav2-tf-fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official stack
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Apply TF freshness tuning
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            ros2 param set /amcl update_min_d 0.0
+            ros2 param set /amcl update_min_a 0.0
+            ros2 param set /amcl transform_tolerance 3.0
+            ros2 param set /controller_server FollowPath.transform_tolerance 3.0 || true
+            ros2 param set /local_costmap/local_costmap transform_tolerance 3.0 || true
+
+            echo "=== tuned params ==="
+            ros2 param get /amcl update_min_d
+            ros2 param get /amcl update_min_a
+            ros2 param get /amcl transform_tolerance
+            ros2 param get /controller_server FollowPath.transform_tolerance || true
+            ros2 param get /local_costmap/local_costmap transform_tolerance || true
+          '
+
+      - name: Initialize AMCL and wait for fresh TF
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+
+            POSE="{header: {frame_id: map}, pose: {pose: {position: {x: 11.735, y: 0.281, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: -0.466, w: 0.885}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0.0685,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+
+            for attempt in 1 2 3; do
+              ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$POSE" >/dev/null
+              sleep 3
+              timeout 5s ros2 topic echo /amcl_pose --once && break || true
+            done
+
+            echo "=== fresh map->odom ==="
+            timeout 5s ros2 run tf2_ros tf2_echo map virtual_hand_solo/odom || true
+          '
+
+      - name: Test pickup navigation
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          set +e
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            timeout 180s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
+              pose: {
+                header: {frame_id: map},
+                pose: {
+                  position: {x: 5.0, y: 0.0, z: 0.0},
+                  orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
+                }
+              }
+            }" --feedback
+          ' | tee nav_goal.txt
+          RC=${PIPESTATUS[0]}
+
+          echo "=== Nav2 errors ==="
+          docker compose logs --no-color --tail=600 omron_handsolo | grep -Ei "Transform data too old|Failed to transform|follow_path|Goal failed|aborting|error_code" || true
+
+          echo "=== goal tail ==="
+          tail -80 nav_goal.txt || true
+
+          exit $RC
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
