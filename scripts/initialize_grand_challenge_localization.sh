@@ -9,11 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== Grand Challenge localization initialization ==="
 
 echo "Waiting for odom -> base_link TF before setting initial pose..."
-if ! timeout 30s ros2 run tf2_ros tf2_echo virtual_hand_solo/odom virtual_hand_solo/base_link >/tmp/grand_challenge_odom_tf.txt 2>&1; then
-  echo "ERROR: odom -> base_link TF was not ready."
-  cat /tmp/grand_challenge_odom_tf.txt || true
-  exit 1
-fi
+python3 "$SCRIPT_DIR/wait_for_tf.py" virtual_hand_solo/odom virtual_hand_solo/base_link 30
 
 python3 "$SCRIPT_DIR/publish_initial_pose.py"
 
@@ -37,10 +33,7 @@ ros2 service call /global_costmap/clear_entirely_global_costmap nav2_msgs/srv/Cl
 sleep 2
 
 echo "Waiting for fresh map -> base_link TF..."
-if python3 "$SCRIPT_DIR/check_grand_challenge_tf.py"; then
-  echo "LOCALIZATION_READY"
-  exit 0
-fi
+python3 "$SCRIPT_DIR/wait_for_tf.py" map virtual_hand_solo/base_link 30
 
-echo "ERROR: map -> base_link TF was not ready."
-exit 1
+echo "LOCALIZATION_READY"
+exit 0
