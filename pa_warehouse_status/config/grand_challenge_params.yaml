@@ -18,21 +18,20 @@ warehouse_mission_controller:
     pickup_y: -0.15
     pickup_yaw: -1.5708
 
-    # Large shelf / right-corner target identified from the official warehouse
-    # map. Stop in free space instead of driving tight against the wall.
+    # Shared right-corner shelf. The shelf is large enough for all three
+    # boxes, so each category uses the same shelf frontage with a different
+    # stopping lane along Y to avoid placing every box at the exact same spot.
+    # All three goals face west toward the shelf.
     large_shelf_x: 31.0
     large_shelf_y: -5.5
     large_shelf_yaw: 3.14159
 
-    # Medium/Small remain provisional until their judged shelf locations are
-    # identified on the official warehouse map.
+    medium_shelf_x: 31.0
+    medium_shelf_y: -4.7
+    medium_shelf_yaw: 3.14159
 
-    medium_shelf_x: 0.75
-    medium_shelf_y: 0.00
-    medium_shelf_yaw: 1.5708
-
-    small_shelf_x: 0.00
-    small_shelf_y: 0.60
+    small_shelf_x: 31.0
+    small_shelf_y: -6.3
     small_shelf_yaw: 3.14159
 
     # Manual fallback for /warehouse/start_cycle.
