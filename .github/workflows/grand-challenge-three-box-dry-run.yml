@@ -38,6 +38,10 @@ jobs:
       - name: Start official Pine-Apple stack
         working-directory: world
         run: |
+          # Course manipulation labs require the TM arm in simulation mode.
+          # Keep base + MoveIt + Nav2 enabled, but switch the arm driver to simulation.
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' compose.yaml
+          grep -A3 'command: ros2 launch handsolo_ros' compose.yaml || true
           docker compose pull irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
           docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
           sleep 65
