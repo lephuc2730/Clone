@@ -1,0 +1,140 @@
+name: Register Old Map to Official Warehouse
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/register-old-map-to-official.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout student repo
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Clone official Hand Solo repo
+        run: git clone --depth 1 https://github.com/CollaborativeRoboticsLab/omron_handsolo.git official
+
+      - name: Install image tools
+        run: python3 -m pip install numpy pillow opencv-python-headless pyyaml
+
+      - name: Register maps and transform pickup
+        run: |
+          python3 - <<'PY'
+          import cv2, yaml, numpy as np
+          from PIL import Image
+          from pathlib import Path
+
+          student_pgm=Path('student/hand_solo_virtual_nav/map/pa_warehouse_map_01.pgm')
+          student_yaml=Path('student/hand_solo_virtual_nav/map/pa_warehouse_map_01.yaml')
+          official_pgm=Path('official/handsolo_ros/map/warehouse_with_conveyer.pgm')
+          official_yaml=Path('official/handsolo_ros/map/warehouse_with_conveyer.yaml')
+
+          with open(student_yaml) as f: sy=yaml.safe_load(f)
+          with open(official_yaml) as f: oy=yaml.safe_load(f)
+
+          S=np.array(Image.open(student_pgm).convert('L'))
+          O=np.array(Image.open(official_pgm).convert('L'))
+
+          sres=float(sy['resolution']); ores=float(oy['resolution'])
+          assert abs(sres-ores)<1e-9, (sres,ores)
+          res=sres
+          sox,soy,_=map(float,sy['origin'])
+          oox,ooy,_=map(float,oy['origin'])
+
+          # Known SLAM cells are not the standard unknown grey 205.
+          known=np.abs(S.astype(np.int16)-205)>8
+          ys,xs=np.where(known)
+          if len(xs)<100:
+              raise SystemExit('Too few known cells in student map')
+
+          # Crop tightly around explored data.
+          pad=2
+          x0=max(0,int(xs.min())-pad); x1=min(S.shape[1],int(xs.max())+pad+1)
+          y0=max(0,int(ys.min())-pad); y1=min(S.shape[0],int(ys.max())+pad+1)
+          C=S[y0:y1,x0:x1]
+          M=known[y0:y1,x0:x1].astype(np.uint8)*255
+
+          # Reduce maps to three levels to suppress SLAM intensity noise.
+          def quant(a):
+              q=np.full(a.shape,127,np.uint8)
+              q[a<80]=0
+              q[a>220]=255
+              return q
+
+          Oq=quant(O)
+          Cq=quant(C)
+
+          results=[]
+          for k in range(4):
+              Rc=np.rot90(Cq,k)
+              Rm=np.rot90(M,k)
+              h,w=Rc.shape
+              if h>Oq.shape[0] or w>Oq.shape[1]:
+                  continue
+              # Masked squared-error matching over known cells.
+              score=cv2.matchTemplate(Oq,Rc,cv2.TM_SQDIFF_NORMED,mask=Rm)
+              minval,_,minloc,_=cv2.minMaxLoc(score)
+              results.append((float(minval),k,minloc,Rc.shape))
+
+          results.sort()
+          best=results[0]
+          minval,k,(mx,my),shape=best
+
+          # Convert old pickup point from student map coordinates to student pixel.
+          px_old=0.15
+          py_old=-0.15
+          sc=(px_old-sox)/res - 0.5
+          sr=S.shape[0]-1 - ((py_old-soy)/res - 0.5)
+
+          # Point relative to crop, then rotate exactly like np.rot90.
+          u=sc-x0
+          v=sr-y0
+          h0,w0=C.shape
+          if k==0:
+              ur,vr=u,v
+          elif k==1:  # CCW
+              ur,vr=v, w0-1-u
+          elif k==2:
+              ur,vr=w0-1-u, h0-1-v
+          else:       # 270 CCW
+              ur,vr=h0-1-v, u
+
+          oc=mx+ur
+          orow=my+vr
+          official_x=oox+(oc+0.5)*res
+          official_y=ooy+(O.shape[0]-orow-0.5)*res
+
+          print('STUDENT_MAP',S.shape,'origin',sy['origin'],'crop',(x0,y0,x1,y1))
+          print('OFFICIAL_MAP',O.shape,'origin',oy['origin'])
+          print('CANDIDATES:')
+          for r in results:
+              print(r)
+          print('BEST_SCORE',minval)
+          print('BEST_ROT90_CCW',k)
+          print('BEST_OFFICIAL_TOPLEFT_PIXEL',mx,my)
+          print('OLD_PICKUP_STUDENT',px_old,py_old)
+          print('TRANSFORMED_PICKUP_OFFICIAL',official_x,official_y)
+
+          out=Path('map_registration_result.txt')
+          out.write_text(
+              f'best_score={minval}\n'
+              f'rotation_90ccw={k}\n'
+              f'official_match_top_left=({mx},{my})\n'
+              f'old_pickup_student=({px_old},{py_old})\n'
+              f'transformed_pickup_official=({official_x:.4f},{official_y:.4f})\n'
+          )
+          PY
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: map-registration-result
+          path: map_registration_result.txt
