@@ -5,7 +5,7 @@ echo "=== Applying Grand Challenge Nav2 runtime tuning ==="
 
 ros2 param set /amcl update_min_d 0.0
 ros2 param set /amcl update_min_a 0.0
-ros2 param set /amcl transform_tolerance 3.0
+ros2 param set /amcl transform_tolerance 1.0
 ros2 param set /controller_server FollowPath.transform_tolerance 3.0
 ros2 param set /local_costmap/local_costmap transform_tolerance 3.0
 ros2 param set /bt_navigator default_server_timeout 5000
