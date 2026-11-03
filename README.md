@@ -1,4 +1,5 @@
-# IRS_2026_GROUP5 — Pine-Apple Grand Challenge
+# IRS_2026_GROUP5 -
+Pine-Apple Grand Challenge
 
 This repository now contains the integrated Group 5 solution for **12059 Industrial Robots and Systems — Pine-Apple Grand Challenge 2026** while preserving the earlier Week 5/6/10 lab work.
 
