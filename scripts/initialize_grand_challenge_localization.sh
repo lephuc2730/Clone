@@ -7,6 +7,14 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Grand Challenge localization initialization ==="
+
+echo "Waiting for odom -> base_link TF before setting initial pose..."
+if ! timeout 30s ros2 run tf2_ros tf2_echo virtual_hand_solo/odom virtual_hand_solo/base_link >/tmp/grand_challenge_odom_tf.txt 2>&1; then
+  echo "ERROR: odom -> base_link TF was not ready."
+  cat /tmp/grand_challenge_odom_tf.txt || true
+  exit 1
+fi
+
 python3 "$SCRIPT_DIR/publish_initial_pose.py"
 
 echo "Waiting for /amcl_pose..."
