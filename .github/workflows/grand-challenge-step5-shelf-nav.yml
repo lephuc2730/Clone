@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/grand-challenge-step5-shelf-nav.yml'
+      - 'scripts/grand_challenge_nav2_tuning.sh'
   workflow_dispatch:
 
 permissions:
