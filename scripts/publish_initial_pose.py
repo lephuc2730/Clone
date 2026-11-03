@@ -3,6 +3,7 @@ import time
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.duration import Duration
 
 
 def main():
@@ -27,7 +28,10 @@ def main():
     # Publish several freshly-stamped messages. AMCL may still be finishing
     # lifecycle activation when the first one arrives.
     for _ in range(5):
-        msg.header.stamp = node.get_clock().now().to_msg()
+        # Hand Solo base TF can lag wall/ROS time by a few hundred ms in Docker.
+        # Stamp the initial pose slightly in the past so AMCL can transform it
+        # immediately instead of rejecting it as an extrapolation into the future.
+        msg.header.stamp = (node.get_clock().now() - Duration(seconds=1.0)).to_msg()
         pub.publish(msg)
         rclpy.spin_once(node, timeout_sec=0.1)
         time.sleep(0.5)
