@@ -80,8 +80,10 @@ jobs:
         run: |
           WS_ID=$(docker compose ps -q omron-workspace)
           docker exec "$WS_ID" bash -lc '
+            set -e
             source /opt/ros/jazzy/setup.bash
-            ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "{
+
+            POSE_MSG="{
               header: {frame_id: map},
               pose: {
                 pose: {
@@ -96,8 +98,23 @@ jobs:
                              0.0, 0.0, 0.0, 0.0, 0.0, 0.0685]
               }
             }"
+
+            # CI startup can race AMCL discovery. Publish several times, the
+            # same way an operator may click 2D Pose Estimate again if needed.
+            for attempt in 1 2 3 4 5; do
+              echo "Publishing initial pose attempt $attempt"
+              ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$POSE_MSG" >/dev/null
+              if timeout 4s ros2 topic echo /amcl_pose --once >/tmp/amcl_pose.txt 2>/dev/null; then
+                cat /tmp/amcl_pose.txt
+                echo "AMCL_LOCALIZED"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "AMCL did not publish after repeated /initialpose"
+            exit 1
           '
-          sleep 8
 
       - name: Queue Large Medium Small
         working-directory: world
