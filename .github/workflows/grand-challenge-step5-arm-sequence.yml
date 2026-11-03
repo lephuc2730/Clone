@@ -1,0 +1,92 @@
+name: Grand Challenge Step 5 - Arm Sequence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step5-arm-sequence.yml'
+      - 'scripts/test_grand_challenge_arm_sequence.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm-sequence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Prepare official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+
+      - name: Start official stack
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation omron-workspace omron_handsolo
+          sleep 70
+
+      - name: Build project
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm
+          '
+
+      - name: Verify MoveIt interface
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            for i in {1..20}; do
+              if ros2 action list | grep -Fxq /move_action; then
+                echo "MOVE_ACTION_READY"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: /move_action unavailable"
+            exit 1
+          '
+
+      - name: Run arm sequence
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            python3 /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/test_grand_challenge_arm_sequence.py
+          '
+
+      - name: Collect arm logs
+        if: always()
+        working-directory: world
+        run: |
+          docker compose logs --no-color --tail=1200 omron_handsolo | grep -Ei "move_group|move_action|planning|execute|trajectory|controller|error|failed|success" || true
+
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
