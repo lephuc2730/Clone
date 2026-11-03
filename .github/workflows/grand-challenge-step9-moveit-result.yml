@@ -1,0 +1,56 @@
+name: Grand Challenge Step 9 - MoveIt Result Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-step9-moveit-result.yml'
+      - 'scripts/test_grand_challenge_moveit_result.py'
+      - 'pa_warehouse_status/pa_warehouse_status/warehouse_mission_controller.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  moveit-result-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout student code
+        uses: actions/checkout@v4
+        with:
+          path: student
+      - name: Start headless display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac >/tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - name: Prepare official environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+          sed -i 's/tm_use_simulation:=false/tm_use_simulation:=true/' world/compose.yaml
+      - name: Start official simulation
+        working-directory: world
+        run: |
+          docker compose up -d irs-simulation omron-workspace omron_handsolo
+          sleep 60
+      - name: Build and test MoveIt result validation
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status
+            source install/setup.bash
+            python3 /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/test_grand_challenge_moveit_result.py
+          '
+      - name: Stop
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
