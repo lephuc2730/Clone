@@ -1,0 +1,183 @@
+name: Grand Challenge Three-Box Dry Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grand-challenge-three-box-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout Clone
+        uses: actions/checkout@v4
+        with:
+          path: student
+
+      - name: Start headless display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool imagemagick
+          Xvfb :99 -screen 0 1920x1080x24 -ac > /tmp/xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 2
+
+      - name: Prepare official course environment
+        run: |
+          git clone --depth 1 https://github.com/CollaborativeRoboticsLab/industrial-robots-and-systems-world.git world
+          mkdir -p world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5
+          rsync -a --exclude='.git/' --exclude='.github/' student/ world/workspace/workspace/irs_ws/src/IRS_2026_GROUP5/
+
+      - name: Start official Pine-Apple stack
+        working-directory: world
+        run: |
+          docker compose pull irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          docker compose up -d irs-simulation irs-openplc-runtime omron-workspace omron_handsolo
+          sleep 65
+          docker compose ps
+
+      - name: Build project
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            colcon build --packages-select pa_warehouse_status hand_solo_virtual_nav hand_solo_arm --event-handlers console_direct+
+            source install/setup.bash
+          '
+
+      - name: Launch mission controller
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec -d "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            ros2 launch pa_warehouse_status grand_challenge.launch.py > /workspace/dry_run_controller.log 2>&1
+          '
+          sleep 8
+
+      - name: Initialize AMCL at default simulated start
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "{
+              header: {frame_id: map},
+              pose: {
+                pose: {
+                  position: {x: 0.0, y: 0.0, z: 0.0},
+                  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+                },
+                covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0685, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0685]
+              }
+            }"
+          '
+          sleep 8
+
+      - name: Queue Large Medium Small
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace/irs_ws
+            source install/setup.bash
+            ros2 service call /warehouse/start_large std_srvs/srv/Trigger "{}"
+            ros2 service call /warehouse/start_medium std_srvs/srv/Trigger "{}"
+            ros2 service call /warehouse/start_small std_srvs/srv/Trigger "{}"
+          '
+
+      - name: Wait for three completed cycles
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            deadline=$((SECONDS + 900))
+            while [ $SECONDS -lt $deadline ]; do
+              completed=$(grep -c "MISSION STATE: BOX_COMPLETE" /workspace/dry_run_controller.log || true)
+              state=$(grep "MISSION STATE:" /workspace/dry_run_controller.log | tail -1 || true)
+              echo "completed=$completed | $state"
+              if [ "$completed" -ge 3 ]; then
+                echo "THREE_BOX_DRY_RUN_PASS"
+                exit 0
+              fi
+              if grep -q "MISSION STATE: FAILED" /workspace/dry_run_controller.log; then
+                echo "Mission failure detected"
+                tail -120 /workspace/dry_run_controller.log
+                exit 1
+              fi
+              sleep 10
+            done
+            echo "Timed out waiting for 3 completed cycles"
+            tail -180 /workspace/dry_run_controller.log
+            exit 1
+          '
+
+      - name: Verify category shelf navigation states
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            LOG=/workspace/dry_run_controller.log
+            grep -q "NAVIGATING_LARGE_SHELF" "$LOG"
+            grep -q "NAVIGATING_MEDIUM_SHELF" "$LOG"
+            grep -q "NAVIGATING_SMALL_SHELF" "$LOG"
+            grep -q "PICKING_LARGE" "$LOG"
+            grep -q "PICKING_MEDIUM" "$LOG"
+            grep -q "PICKING_SMALL" "$LOG"
+            grep -q "ARM_RETRACTED_SAFE" "$LOG"
+            grep -q "BOX_RELEASED_ON_SHELF" "$LOG"
+            grep -q "THREE_BOX_DRY_RUN_PASS" "$LOG" || true
+            echo "=== Mission state trace ==="
+            grep "MISSION STATE:" "$LOG"
+          '
+
+      - name: Capture final simulator view
+        if: always()
+        run: |
+          mkdir -p dry_run_evidence
+          SIM_ID=$(xdotool search --onlyvisible --name "IRS_Warehouse" | head -1 || true)
+          if [ -z "$SIM_ID" ]; then
+            SIM_ID=$(xdotool search --onlyvisible --name "Warehouse" | head -1 || true)
+          fi
+          if [ -n "$SIM_ID" ]; then
+            xdotool windowactivate --sync "$SIM_ID" || true
+            xdotool windowraise "$SIM_ID" || true
+            sleep 4
+          fi
+          import -display :99 -window root dry_run_evidence/final_simulator.png || true
+          WS_ID=$(docker compose -f world/compose.yaml ps -q omron-workspace || true)
+          if [ -n "$WS_ID" ]; then
+            docker cp "$WS_ID":/workspace/dry_run_controller.log dry_run_evidence/controller.log || true
+          fi
+
+      - name: Upload dry-run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grand-challenge-three-box-dry-run
+          path: dry_run_evidence/
+
+      - name: Stop environment
+        if: always()
+        working-directory: world
+        run: docker compose down -v || true
