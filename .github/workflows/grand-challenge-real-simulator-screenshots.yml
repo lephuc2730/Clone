@@ -52,9 +52,27 @@ jobs:
           TARGET=$(docker exec omron_handsolo sh -lc "find / -type f -path '*/handsolo_ros/config/handsolo-nav2.yaml' 2>/dev/null | head -1")
           echo "Hand Solo Nav2 config: $TARGET"
           test -n "$TARGET"
-          docker cp ../student/config/handsolo-nav2-grand-challenge.yaml omron_handsolo:"$TARGET"
+          cp ../student/config/handsolo-nav2-grand-challenge.yaml /tmp/handsolo-nav2-screenshot.yaml
+          sed -i 's/transform_tolerance: 10.0/transform_tolerance: 15.0/g' /tmp/handsolo-nav2-screenshot.yaml
+          docker cp /tmp/handsolo-nav2-screenshot.yaml omron_handsolo:"$TARGET"
           docker restart omron_handsolo
           sleep 40
+
+      - name: Verify screenshot Nav2 tolerance
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          for attempt in 1 2 3 4 5 6 7 8; do
+            VALUE=$(docker exec "$WS_ID" bash -lc 'source /opt/ros/jazzy/setup.bash; ros2 param get /controller_server FollowPath.transform_tolerance 2>/dev/null' || true)
+            echo "attempt $attempt: $VALUE"
+            if echo "$VALUE" | grep -q "15.0"; then
+              echo "SCREENSHOT_NAV2_TOLERANCE_READY"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "ERROR: screenshot Nav2 tolerance did not load."
+          exit 1
 
       - name: Build Clone packages
         working-directory: world
