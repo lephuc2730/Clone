@@ -54,6 +54,9 @@ jobs:
           test -n "$TARGET"
           cp ../student/config/handsolo-nav2-grand-challenge.yaml /tmp/handsolo-nav2-screenshot.yaml
           sed -i 's/transform_tolerance: 10.0/transform_tolerance: 60.0/g' /tmp/handsolo-nav2-screenshot.yaml
+          sed -i 's/required_movement_radius: 0.5/required_movement_radius: 0.10/' /tmp/handsolo-nav2-screenshot.yaml
+          sed -i 's/movement_time_allowance: 10.0/movement_time_allowance: 30.0/' /tmp/handsolo-nav2-screenshot.yaml
+          sed -i 's/tolerance: 0.5/tolerance: 1.0/' /tmp/handsolo-nav2-screenshot.yaml
           docker cp /tmp/handsolo-nav2-screenshot.yaml omron_handsolo:"$TARGET"
           docker restart omron_handsolo
           sleep 40
