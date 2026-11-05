@@ -130,6 +130,9 @@ jobs:
           sleep 3
           kill -0 "$(cat demo-video/ffmpeg.pid)"
 
+      # The old (5,0) endpoint repeatedly failed to plan; the robot was observed near
+      # (4.38,-0.83) in the real simulator logs. This is only a navigation candidate,
+      # not evidence of arm reach or successful box attachment.
       - name: Navigate to pickup
         working-directory: world
         run: |
@@ -139,7 +142,7 @@ jobs:
             source /opt/ros/jazzy/setup.bash
             timeout 180s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
               pose: {header: {frame_id: map}, pose: {
-                position: {x: 5.0, y: 0.0, z: 0.0},
+                position: {x: 4.3, y: -0.8, z: 0.0},
                 orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
               }}
             }" --feedback | tee /tmp/pickup.txt
@@ -171,7 +174,7 @@ jobs:
             source /opt/ros/jazzy/setup.bash
             timeout 240s ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{
               pose: {header: {frame_id: map}, pose: {
-                position: {x: 5.0, y: 0.0, z: 0.0},
+                position: {x: 4.3, y: -0.8, z: 0.0},
                 orientation: {x: 0.0, y: 0.0, z: 1.0, w: 0.0}
               }}
             }" --feedback | tee /tmp/return.txt
