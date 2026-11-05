@@ -10,6 +10,9 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
 GOALS = [(4.3, -0.8), (5.0, 0.0), (31.0, -5.5)]
+# Nav2 inflated cells can have nonzero traversable costs. Unknown (-1)
+# and lethal/inscribed obstacles (>= 99) are never accepted as free.
+MAX_TRAVERSABLE_COST = 50
 
 class Probe(Node):
     def __init__(self):
@@ -49,14 +52,15 @@ def main():
     def cost(i, j):
         return data[j*w+i] if inside(i, j) else None
     def free(i, j):
-        return cost(i, j) == 0
+        c = cost(i, j)
+        return c is not None and 0 <= c <= MAX_TRAVERSABLE_COST
     start = cell(n.pose.x, n.pose.y)
-    print(f'Costmap {w}x{h} res={res} origin=({ox:.2f},{oy:.2f}); AMCL=({n.pose.x:.2f},{n.pose.y:.2f}) start_cell={start} cost={cost(*start)}')
+    print(f'Costmap {w}x{h} res={res} origin=({ox:.2f},{oy:.2f}); AMCL=({n.pose.x:.2f},{n.pose.y:.2f}) start_cell={start} cost={cost(*start)}; traversable threshold={MAX_TRAVERSABLE_COST}')
     for x, y in GOALS:
         ij = cell(x,y)
         print(f'Goal ({x:.2f},{y:.2f}) cell={ij} cost={cost(*ij)}')
     if not free(*start):
-        print('START BLOCKED OR UNKNOWN in costmap: cannot infer reachability safely.')
+        print('START BLOCKED, UNKNOWN, or ABOVE COST THRESHOLD in costmap: cannot infer reachability safely.')
     else:
         visited = bytearray(w*h)
         q = deque([start])
@@ -72,7 +76,7 @@ def main():
         print(f'Free cells connected to robot: {sum(visited)}')
         for x,y in GOALS:
             gi,gj=cell(x,y)
-            print(f'Goal ({x:.2f},{y:.2f}) connected={bool(inside(gi,gj) and visited[gj*w+gi])}')
+            print(f'Goal ({x:.2f},{y:.2f}) connected={bool(inside(gi,gj) and visited[gj*w+gi])}; diagnostic only (does not prove Nav2 path or arm reach)')
             best=None
             radius=round(1.5/res)
             for j in range(max(0,gj-radius),min(h,gj+radius+1)):
