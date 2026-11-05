@@ -53,7 +53,9 @@ jobs:
           TARGET=$(docker exec omron_handsolo sh -lc "find / -type f -path '*/handsolo_ros/config/handsolo-nav2.yaml' 2>/dev/null | head -1")
           echo "Hand Solo Nav2 config: $TARGET"
           test -n "$TARGET"
-          docker cp ../student/config/handsolo-nav2-grand-challenge.yaml omron_handsolo:"$TARGET"
+          cp ../student/config/handsolo-nav2-grand-challenge.yaml /tmp/handsolo-nav2-video.yaml
+          sed -i 's/transform_tolerance: 10.0/transform_tolerance: 60.0/g' /tmp/handsolo-nav2-video.yaml
+          docker cp /tmp/handsolo-nav2-video.yaml omron_handsolo:"$TARGET"
           docker restart omron_handsolo
           sleep 35
           docker compose ps omron_handsolo
@@ -65,13 +67,13 @@ jobs:
           for attempt in 1 2 3 4 5 6 7 8; do
             VALUE=$(docker exec "$WS_ID" bash -lc 'source /opt/ros/jazzy/setup.bash; ros2 param get /controller_server FollowPath.transform_tolerance 2>/dev/null' || true)
             echo "attempt $attempt: $VALUE"
-            if echo "$VALUE" | grep -q "10.0"; then
+            if echo "$VALUE" | grep -q "60.0"; then
               echo "NAV2_TOLERANCE_READY"
               exit 0
             fi
             sleep 3
           done
-          echo "ERROR: controller did not load 10.0s transform tolerance."
+          echo "ERROR: controller did not load 60.0s transform tolerance."
           exit 1
 
       - name: Build project
@@ -93,6 +95,20 @@ jobs:
             set -e
             source /opt/ros/jazzy/setup.bash
             bash /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/apply_grand_challenge_nav2_tuning.sh
+          '
+
+      - name: Restore video capture TF tolerance
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            ros2 param set /controller_server FollowPath.transform_tolerance 60.0
+            ros2 param set /local_costmap/local_costmap transform_tolerance 60.0
+            ros2 param set /global_costmap/global_costmap transform_tolerance 60.0
+            ros2 param set /behavior_server transform_tolerance 60.0
+            ros2 param get /controller_server FollowPath.transform_tolerance
           '
 
       - name: Initialize localization robustly
