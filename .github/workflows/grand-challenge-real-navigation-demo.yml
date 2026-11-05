@@ -10,6 +10,7 @@ on:
       - 'scripts/check_grand_challenge_tf.py'
       - 'scripts/publish_initial_pose.py'
       - 'scripts/wait_for_tf.py'
+      - 'scripts/diagnose_pickup_costmap.py'
       - 'config/handsolo-nav2-grand-challenge.yaml'
   workflow_dispatch:
 
@@ -155,6 +156,15 @@ jobs:
             echo "=== Nav2 action availability ==="
             ros2 action list | grep -E "navigate_to_pose|compute_path_to_pose" || true
           ' | tee ../demo-video/pickup-diagnostics.txt
+
+      - name: Check connected costmap cells near conveyor and shelf
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            python3 /workspace/irs_ws/src/IRS_2026_GROUP5/scripts/diagnose_pickup_costmap.py
+          ' | tee ../demo-video/costmap-reachability.txt
 
       - name: Navigate to pickup
         working-directory: world
