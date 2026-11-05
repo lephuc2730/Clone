@@ -149,7 +149,7 @@ jobs:
             echo "=== Map metadata ==="
             timeout 8s ros2 topic echo /map --once --field info || true
             echo "=== Global costmap metadata ==="
-            timeout 8s ros2 topic echo /global_costmap/costmap --once --field metadata || true
+            timeout 8s ros2 topic echo /global_costmap/costmap --once --field info || true
             echo "=== Planner parameters ==="
             ros2 param get /planner_server GridBased.tolerance || true
             echo "=== Nav2 action availability ==="
