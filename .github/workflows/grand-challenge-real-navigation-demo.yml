@@ -137,6 +137,25 @@ jobs:
       # The old (5,0) endpoint repeatedly failed to plan; the robot was observed near
       # (4.38,-0.83) in the real simulator logs. This is only a navigation candidate,
       # not evidence of arm reach or successful box attachment.
+      - name: Diagnose planner and reachable pickup before navigation
+        working-directory: world
+        run: |
+          mkdir -p ../demo-video
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            source /opt/ros/jazzy/setup.bash
+            echo "=== AMCL pose ==="
+            timeout 8s ros2 topic echo /amcl_pose --once --field pose.pose.position || true
+            echo "=== Map metadata ==="
+            timeout 8s ros2 topic echo /map --once --field info || true
+            echo "=== Global costmap metadata ==="
+            timeout 8s ros2 topic echo /global_costmap/costmap --once --field metadata || true
+            echo "=== Planner parameters ==="
+            ros2 param get /planner_server GridBased.tolerance || true
+            echo "=== Nav2 action availability ==="
+            ros2 action list | grep -E "navigate_to_pose|compute_path_to_pose" || true
+          ' | tee ../demo-video/pickup-diagnostics.txt
+
       - name: Navigate to pickup
         working-directory: world
         run: |
