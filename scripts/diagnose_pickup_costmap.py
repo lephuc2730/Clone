@@ -7,6 +7,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
 GOALS = [(4.3, -0.8), (5.0, 0.0), (31.0, -5.5)]
 
@@ -15,7 +16,10 @@ class Probe(Node):
         super().__init__('grand_challenge_costmap_probe')
         self.grid = None
         self.pose = None
-        self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self.on_grid, 10)
+        self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self.on_grid,
+            QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
+                       reliability=ReliabilityPolicy.RELIABLE,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_pose, 10)
     def on_grid(self, msg):
         self.grid = msg
@@ -25,14 +29,14 @@ class Probe(Node):
 def main():
     rclpy.init()
     n = Probe()
-    deadline = time.monotonic() + 18
+    deadline = time.monotonic() + 60
     while time.monotonic() < deadline and (n.grid is None or n.pose is None):
         rclpy.spin_once(n, timeout_sec=0.5)
     if n.grid is None or n.pose is None:
-        print('DIAGNOSTIC INCOMPLETE: costmap or AMCL pose missing', flush=True)
+        print(f'DIAGNOSTIC INCOMPLETE: costmap={n.grid is not None}, AMCL={n.pose is not None}; refusing to guess a waypoint', flush=True)
         n.destroy_node()
         rclpy.shutdown()
-        return
+        raise SystemExit(2)
     info = n.grid.info
     w, h = info.width, info.height
     res = info.resolution
