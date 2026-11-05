@@ -95,6 +95,20 @@ jobs:
             bash /workspace/irs_ws/src/Clone/scripts/apply_grand_challenge_nav2_tuning.sh
           '
 
+      - name: Restore capture TF tolerance after runtime tuning
+        working-directory: world
+        run: |
+          WS_ID=$(docker compose ps -q omron-workspace)
+          docker exec "$WS_ID" bash -lc '
+            set -e
+            source /opt/ros/jazzy/setup.bash
+            ros2 param set /controller_server FollowPath.transform_tolerance 15.0
+            ros2 param set /local_costmap/local_costmap transform_tolerance 15.0
+            ros2 param set /global_costmap/global_costmap transform_tolerance 15.0
+            ros2 param set /behavior_server transform_tolerance 15.0
+            ros2 param get /controller_server FollowPath.transform_tolerance
+          '
+
       - name: Initialize localization
         working-directory: world
         run: |
