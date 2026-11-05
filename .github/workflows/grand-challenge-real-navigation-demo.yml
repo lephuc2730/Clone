@@ -214,6 +214,21 @@ jobs:
             grep -q "Goal finished with status: SUCCEEDED" /tmp/return.txt
           '
 
+      - name: Preserve exact Nav2 action results and simulator logs
+        if: always()
+        working-directory: world
+        run: |
+          mkdir -p ../demo-video
+          WS_ID=$(docker compose ps -q omron-workspace 2>/dev/null || true)
+          if test -n "$WS_ID"; then
+            for stage in pickup shelf return; do
+              docker cp "$WS_ID:/tmp/${stage}.txt" "../demo-video/${stage}-nav2-action.txt" 2>/dev/null || true
+            done
+          fi
+          docker compose logs --no-color omron_handsolo > ../demo-video/omron-handsolo.log 2>&1 || true
+          docker compose logs --no-color omron-workspace > ../demo-video/omron-workspace.log 2>&1 || true
+          echo "Collected Nav2 action transcripts and official Docker logs where available."
+
       - name: Finish screen recording
         if: always()
         run: |
