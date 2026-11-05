@@ -124,7 +124,11 @@ jobs:
       - name: Begin real Xvfb screen recording
         run: |
           mkdir -p demo-video
-          # Display genuine ROS telemetry in the captured Xvfb session; do not record an empty desktop.\n          DISPLAY=:99 xterm -geometry 150x45+20+20 -fa Monospace -fs 12 -title 'Official simulator ROS2 telemetry' -e bash -lc 'while true; do date -u; docker exec $(cd world && docker compose ps -q omron-workspace) bash -lc "source /opt/ros/jazzy/setup.bash; ros2 topic echo /amcl_pose --once --field pose.pose.position 2>/dev/null || true"; sleep 4; done' >demo-video/telemetry-terminal.log 2>&1 &\n          sleep 2\n          DISPLAY=:99 xwininfo -root -tree > demo-video/windows.txt || true\n          grep -q 'Official simulator ROS2 telemetry' demo-video/windows.txt || { echo 'No visible capture window'; exit 1; }
+          # Display genuine ROS telemetry in the captured Xvfb session; do not record an empty desktop.
+          DISPLAY=:99 xterm -geometry 150x45+20+20 -fa Monospace -fs 12 -title 'Official simulator ROS2 telemetry' -e bash -lc 'while true; do date -u; docker exec $(cd world && docker compose ps -q omron-workspace) bash -lc "source /opt/ros/jazzy/setup.bash; ros2 topic echo /amcl_pose --once --field pose.pose.position 2>/dev/null || true"; sleep 4; done' >demo-video/telemetry-terminal.log 2>&1 &
+          sleep 2
+          DISPLAY=:99 xwininfo -root -tree > demo-video/windows.txt || true
+          grep -q 'Official simulator ROS2 telemetry' demo-video/windows.txt || { echo 'No visible capture window'; exit 1; }
           DISPLAY=:99 ffmpeg -nostdin -hide_banner -loglevel warning -y -f x11grab -framerate 1 -video_size 1920x1080 -i :99.0 -vf "scale=1280:720" -c:v libx264 -preset ultrafast -crf 32 -pix_fmt yuv420p demo-video/real_navigation.mp4 >demo-video/ffmpeg.log 2>&1 &
           echo $! > demo-video/ffmpeg.pid
           sleep 3
