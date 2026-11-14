@@ -1,9 +1,5 @@
 # Pine-Apple Grand Challenge — Group 5
 
-This repository contains the current integrated solution for **12059 Industrial Robots and Systems — Pine-Apple Grand Challenge 2026**.
-
-> **Important:** this is the active project repository. Use **`Clone`** for the Grand Challenge. Do not use the old `IRS_2026_GROUP5` paths in the demo commands below.
-
 ---
 
 # Demo-Day Grand Challenge Procedure
