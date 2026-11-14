@@ -578,7 +578,6 @@ ros2 topic echo /amcl_pose --once
 - `scripts/test_grand_challenge_arm_sequence.py` — isolated MoveIt validation
 - `scripts/test_grand_challenge_plc_events.py` — PLC classification validation
 - `scripts/test_grand_challenge_moveit_result.py` — MoveIt result guard validation
-- `scripts/capture_box_on_shelf.sh` — evidence screenshot helper
 
 ---
 
