@@ -4,7 +4,6 @@
 
 # Demo-Day Grand Challenge Procedure
 
-Follow these steps in order. Do not jump directly to the full three-box run until the preflight, localisation, navigation and arm checks are working.
 
 ## 1. Update the Clone repository
 
