@@ -1,10 +1,5 @@
 # Pine-Apple Grand Challenge — Group 5
-
 ---
-
-# Demo-Day Grand Challenge Procedure
-
-
 ## 1. Update the Clone repository
 
 On the machine where the project is stored:
